@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Product, Collection, Order, Customer, ProductStatus } from '../types';
+import { Product, Collection, Customer, Order, ProductStatus } from '../types';
 import { INITIAL_ORDERS, INITIAL_CUSTOMERS } from '../mockData';
 import { 
   subscribeToProducts, 
@@ -14,24 +14,34 @@ import {
   saveCollectionToFirestore, 
   deleteCollectionFromFirestore 
 } from '../lib/collectionService';
+import {
+  subscribeToCustomers,
+  saveCustomerToFirestore,
+  deleteCustomersFromFirestore
+} from '../lib/customerService';
 
 interface AppContextType {
   products: Product[];
   isLoadingProducts: boolean;
   collections: Collection[];
   isLoadingCollections: boolean;
-  orders: Order[];
   customers: Customer[];
+  isLoadingCustomers: boolean;
+  orders: Order[];
   isModalOpen: boolean;
   editingProduct: Product | null;
   isCollectionModalOpen: boolean;
   editingCollection: Collection | null;
+  isCustomerModalOpen: boolean;
+  editingCustomer: Customer | null;
   isSearchOpen: boolean;
   toastMessage: string | null;
   setIsModalOpen: (open: boolean) => void;
   setEditingProduct: (product: Product | null) => void;
   setIsCollectionModalOpen: (open: boolean) => void;
   setEditingCollection: (collection: Collection | null) => void;
+  setIsCustomerModalOpen: (open: boolean) => void;
+  setEditingCustomer: (customer: Customer | null) => void;
   setIsSearchOpen: (open: boolean) => void;
   showToast: (msg: string) => void;
   handleSaveProduct: (productData: Partial<Product>) => Promise<void>;
@@ -39,6 +49,8 @@ interface AppContextType {
   handleUpdateStatus: (ids: string[], status: ProductStatus) => Promise<void>;
   handleSaveCollection: (collectionData: Partial<Collection>, selectedProductIds: string[]) => Promise<void>;
   handleDeleteCollection: (id: string) => Promise<void>;
+  handleSaveCustomer: (customerData: Partial<Customer>) => Promise<void>;
+  handleDeleteCustomers: (ids: string[]) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -50,14 +62,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [collections, setCollections] = useState<Collection[]>([]);
   const [isLoadingCollections, setIsLoadingCollections] = useState<boolean>(true);
 
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [isLoadingCustomers, setIsLoadingCustomers] = useState<boolean>(true);
+
   const [orders, setOrders] = useState<Order[]>(INITIAL_ORDERS);
-  const [customers, setCustomers] = useState<Customer[]>(INITIAL_CUSTOMERS);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
   const [isCollectionModalOpen, setIsCollectionModalOpen] = useState(false);
   const [editingCollection, setEditingCollection] = useState<Collection | null>(null);
+
+  const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
+  const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
 
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -73,7 +90,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       (err) => {
         console.error('Error fetching products from Firebase:', err);
         setIsLoadingProducts(false);
-        showToast('Error loading products from Firebase');
       }
     );
     return () => unsubscribe();
@@ -90,6 +106,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       (err) => {
         console.error('Error fetching collections from Firebase:', err);
         setIsLoadingCollections(false);
+      }
+    );
+    return () => unsubscribe();
+  }, []);
+
+  // Subscribe to real-time customers from Firebase Firestore
+  useEffect(() => {
+    setIsLoadingCustomers(true);
+    const unsubscribe = subscribeToCustomers(
+      (fetchedCustomers) => {
+        setCustomers(fetchedCustomers);
+        setIsLoadingCustomers(false);
+      },
+      (err) => {
+        console.error('Error fetching customers from Firebase:', err);
+        setIsLoadingCustomers(false);
       }
     );
     return () => unsubscribe();
@@ -172,6 +204,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const handleSaveCustomer = async (customerData: Partial<Customer>) => {
+    try {
+      await saveCustomerToFirestore(customerData);
+      showToast(
+        customerData.id 
+          ? `Updated customer "${customerData.name || customerData.firstName || 'Customer'}" successfully.` 
+          : `Added new customer "${customerData.firstName || 'Customer'}".`
+      );
+      setEditingCustomer(null);
+    } catch (err: any) {
+      console.error('Failed to save customer:', err);
+      showToast(`Failed to save customer: ${err.message || 'Firebase error'}`);
+    }
+  };
+
+  const handleDeleteCustomers = async (ids: string[]) => {
+    try {
+      await deleteCustomersFromFirestore(ids);
+      showToast(`Deleted ${ids.length} customer(s) from Firebase.`);
+    } catch (err: any) {
+      console.error('Failed to delete customers:', err);
+      showToast(`Failed to delete customers: ${err.message || 'Firebase error'}`);
+    }
+  };
+
   return (
     <AppContext.Provider
       value={{
@@ -179,25 +236,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         isLoadingProducts,
         collections,
         isLoadingCollections,
-        orders,
         customers,
+        isLoadingCustomers,
+        orders,
         isModalOpen,
         editingProduct,
         isCollectionModalOpen,
         editingCollection,
+        isCustomerModalOpen,
+        editingCustomer,
         isSearchOpen,
         toastMessage,
         setIsModalOpen,
         setEditingProduct,
         setIsCollectionModalOpen,
         setEditingCollection,
+        setIsCustomerModalOpen,
+        setEditingCustomer,
         setIsSearchOpen,
         showToast,
         handleSaveProduct,
         handleDeleteProducts,
         handleUpdateStatus,
         handleSaveCollection,
-        handleDeleteCollection
+        handleDeleteCollection,
+        handleSaveCustomer,
+        handleDeleteCustomers
       }}
     >
       {children}

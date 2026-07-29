@@ -75,6 +75,63 @@ export interface Collection {
   updatedAt?: string;
 }
 
+export interface Address {
+  id: string;
+  addressLine1: string;
+  addressLine2?: string;
+  city: string;
+  state: string;
+  pincode: string;
+  country: string;
+  isDefault?: boolean;
+}
+
+export interface CartItem {
+  id: string;
+  productId: string;
+  productTitle: string;
+  productImage?: string;
+  color?: string;
+  size?: string;
+  quantity: number;
+  price: number;
+}
+
+export interface WishlistItem {
+  id: string;
+  productId: string;
+  productTitle: string;
+  productImage?: string;
+  price: number;
+}
+
+export interface Customer {
+  id: string;
+  firstName?: string;
+  lastName?: string;
+  name: string; // Combined full name
+  email?: string;
+  phoneCode?: string; // e.g. "+91"
+  phoneNumber?: string;
+  country?: string; // e.g. "India"
+  countryIso?: string; // e.g. "in"
+  countryFlag?: string; // e.g. "🇮🇳"
+  language?: string; // e.g. "English [Default]"
+  marketingEmail?: boolean;
+  marketingSMS?: boolean;
+  marketingWhatsApp?: boolean;
+  notes?: string;
+  addresses?: Address[];
+  cartItems?: CartItem[];
+  wishlistItems?: WishlistItem[];
+  ordersCount: number;
+  totalSpent: number;
+  status: 'Subscribed' | 'Unsubscribed';
+  location: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface Order {
   id: string;
   orderNumber: string;
@@ -84,16 +141,6 @@ export interface Order {
   paymentStatus: 'Paid' | 'Pending' | 'Refunded';
   fulfillmentStatus: 'Fulfilled' | 'Unfulfilled' | 'In Progress';
   itemsCount: number;
-}
-
-export interface Customer {
-  id: string;
-  name: string;
-  email: string;
-  location: string;
-  ordersCount: number;
-  totalSpent: number;
-  status: 'Subscribed' | 'Unsubscribed';
 }
 
 export interface OverviewMetrics {
