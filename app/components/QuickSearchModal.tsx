@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Search, Tag, ShoppingCart, Users, BarChart3, ArrowRight, X } from 'lucide-react';
+import { Search, Tag, ShoppingCart, Users, Truck, BarChart3, ArrowRight, X } from 'lucide-react';
 import { ViewType, Product } from '../types';
 
 interface QuickSearchModalProps {
@@ -49,6 +49,7 @@ export const QuickSearchModal: React.FC<QuickSearchModalProps> = ({
     { label: 'Products', view: 'products' as ViewType, icon: Tag },
     { label: 'Orders', view: 'orders' as ViewType, icon: ShoppingCart },
     { label: 'Customers', view: 'customers' as ViewType, icon: Users },
+    { label: 'Shipping & Delivery', view: 'shipping' as ViewType, icon: Truck },
     { label: 'Analytics', view: 'analytics' as ViewType, icon: BarChart3 },
   ];
 
@@ -69,7 +70,7 @@ export const QuickSearchModal: React.FC<QuickSearchModalProps> = ({
             autoFocus
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search products, orders, or pages..."
+            placeholder="Search products, orders, shipping rates, or pages..."
             className="w-full bg-transparent text-sm text-gray-900 focus:outline-none"
           />
           {query && (

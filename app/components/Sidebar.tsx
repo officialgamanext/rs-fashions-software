@@ -8,6 +8,7 @@ import {
   ShoppingCart, 
   Tag, 
   Users, 
+  Truck,
   Percent, 
   BarChart3, 
   ChevronDown, 
@@ -35,6 +36,7 @@ export const Sidebar: React.FC = () => {
       ]
     },
     { href: '/customers', label: 'Customers', icon: Users },
+    { href: '/shipping-and-delivery', label: 'Shipping & Delivery', icon: Truck },
     { href: '/discounts', label: 'Discounts', icon: Percent },
     { href: '/analytics', label: 'Analytics', icon: BarChart3 }
   ];

@@ -1,8 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Product, Collection, Customer, Order, ProductStatus } from '../types';
-import { INITIAL_CUSTOMERS } from '../mockData';
+import { Product, Collection, Customer, Order, ShippingMethod, ProductStatus } from '../types';
 import { 
   subscribeToProducts, 
   saveProductToFirestore, 
@@ -24,6 +23,11 @@ import {
   saveOrderToFirestore,
   deleteOrdersFromFirestore
 } from '../lib/orderService';
+import {
+  subscribeToShippingMethods,
+  saveShippingMethodToFirestore,
+  deleteShippingMethodFromFirestore
+} from '../lib/shippingService';
 
 interface AppContextType {
   products: Product[];
@@ -34,6 +38,8 @@ interface AppContextType {
   isLoadingCustomers: boolean;
   orders: Order[];
   isLoadingOrders: boolean;
+  shippingMethods: ShippingMethod[];
+  isLoadingShipping: boolean;
   isModalOpen: boolean;
   editingProduct: Product | null;
   isCollectionModalOpen: boolean;
@@ -42,6 +48,8 @@ interface AppContextType {
   editingCustomer: Customer | null;
   isOrderModalOpen: boolean;
   editingOrder: Order | null;
+  isShippingModalOpen: boolean;
+  editingShippingMethod: ShippingMethod | null;
   isSearchOpen: boolean;
   toastMessage: string | null;
   setIsModalOpen: (open: boolean) => void;
@@ -52,6 +60,8 @@ interface AppContextType {
   setEditingCustomer: (customer: Customer | null) => void;
   setIsOrderModalOpen: (open: boolean) => void;
   setEditingOrder: (order: Order | null) => void;
+  setIsShippingModalOpen: (open: boolean) => void;
+  setEditingShippingMethod: (method: ShippingMethod | null) => void;
   setIsSearchOpen: (open: boolean) => void;
   showToast: (msg: string) => void;
   handleSaveProduct: (productData: Partial<Product>) => Promise<void>;
@@ -63,6 +73,8 @@ interface AppContextType {
   handleDeleteCustomers: (ids: string[]) => Promise<void>;
   handleSaveOrder: (orderData: Partial<Order>) => Promise<void>;
   handleDeleteOrders: (ids: string[]) => Promise<void>;
+  handleSaveShippingMethod: (methodData: Partial<ShippingMethod>) => Promise<void>;
+  handleDeleteShippingMethods: (ids: string[]) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -80,6 +92,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [orders, setOrders] = useState<Order[]>([]);
   const [isLoadingOrders, setIsLoadingOrders] = useState<boolean>(true);
 
+  const [shippingMethods, setShippingMethods] = useState<ShippingMethod[]>([]);
+  const [isLoadingShipping, setIsLoadingShipping] = useState<boolean>(true);
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
@@ -91,6 +106,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
+
+  const [isShippingModalOpen, setIsShippingModalOpen] = useState(false);
+  const [editingShippingMethod, setEditingShippingMethod] = useState<ShippingMethod | null>(null);
 
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -154,6 +172,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       (err) => {
         console.error('Error fetching orders from Firebase:', err);
         setIsLoadingOrders(false);
+      }
+    );
+    return () => unsubscribe();
+  }, []);
+
+  // Subscribe to real-time shipping methods from Firebase Firestore
+  useEffect(() => {
+    setIsLoadingShipping(true);
+    const unsubscribe = subscribeToShippingMethods(
+      (fetchedMethods) => {
+        setShippingMethods(fetchedMethods);
+        setIsLoadingShipping(false);
+      },
+      (err) => {
+        console.error('Error fetching shipping methods from Firebase:', err);
+        setIsLoadingShipping(false);
       }
     );
     return () => unsubscribe();
@@ -263,7 +297,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const handleSaveOrder = async (orderData: Partial<Order>) => {
     try {
-      const savedId = await saveOrderToFirestore(orderData);
+      await saveOrderToFirestore(orderData);
       showToast(
         orderData.id 
           ? `Updated order #${orderData.orderNumber || ''} successfully.` 
@@ -286,6 +320,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const handleSaveShippingMethod = async (methodData: Partial<ShippingMethod>) => {
+    try {
+      await saveShippingMethodToFirestore(methodData);
+      showToast(
+        methodData.id 
+          ? `Updated shipping rate "${methodData.title || 'Method'}" successfully.` 
+          : `Saved shipping method "${methodData.title || 'Method'}".`
+      );
+      setEditingShippingMethod(null);
+    } catch (err: any) {
+      console.error('Failed to save shipping method:', err);
+      showToast(`Failed to save shipping method: ${err.message || 'Firebase error'}`);
+    }
+  };
+
+  const handleDeleteShippingMethods = async (ids: string[]) => {
+    try {
+      await deleteShippingMethodFromFirestore(ids);
+      showToast(`Deleted ${ids.length} shipping method(s) from Firebase.`);
+    } catch (err: any) {
+      console.error('Failed to delete shipping methods:', err);
+      showToast(`Failed to delete shipping methods: ${err.message || 'Firebase error'}`);
+    }
+  };
+
   return (
     <AppContext.Provider
       value={{
@@ -297,6 +356,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         isLoadingCustomers,
         orders,
         isLoadingOrders,
+        shippingMethods,
+        isLoadingShipping,
         isModalOpen,
         editingProduct,
         isCollectionModalOpen,
@@ -305,6 +366,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         editingCustomer,
         isOrderModalOpen,
         editingOrder,
+        isShippingModalOpen,
+        editingShippingMethod,
         isSearchOpen,
         toastMessage,
         setIsModalOpen,
@@ -315,6 +378,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setEditingCustomer,
         setIsOrderModalOpen,
         setEditingOrder,
+        setIsShippingModalOpen,
+        setEditingShippingMethod,
         setIsSearchOpen,
         showToast,
         handleSaveProduct,
@@ -325,7 +390,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         handleSaveCustomer,
         handleDeleteCustomers,
         handleSaveOrder,
-        handleDeleteOrders
+        handleDeleteOrders,
+        handleSaveShippingMethod,
+        handleDeleteShippingMethods
       }}
     >
       {children}

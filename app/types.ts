@@ -4,20 +4,11 @@ export type ViewType =
   | 'products' 
   | 'collections' 
   | 'inventory' 
-  | 'purchase_orders'
-  | 'transfers'
   | 'gift_cards'
   | 'customers' 
-  | 'growth'
+  | 'shipping'
   | 'discounts' 
-  | 'content'
-  | 'markets'
-  | 'finance'
-  | 'analytics' 
-  | 'online_store'
-  | 'agentic'
-  | 'export_images'
-  | 'settings';
+  | 'analytics';
 
 export type ProductStatus = 'Active' | 'Draft' | 'Archived';
 
@@ -175,6 +166,22 @@ export interface Order {
   billingAddress?: OrderAddress;
   isBillingSameAsShipping?: boolean;
   notes?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export type ShippingRuleType = 'weight' | 'quantity' | 'flat';
+
+export interface ShippingMethod {
+  id: string;
+  title: string;
+  type: ShippingRuleType;
+  minWeight?: number; // In kg
+  maxWeight?: number; // In kg
+  minQuantity?: number;
+  maxQuantity?: number;
+  amount: number; // Shipping rate in ₹
+  status: 'Active' | 'Inactive';
   createdAt?: string;
   updatedAt?: string;
 }
