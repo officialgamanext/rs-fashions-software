@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Product, Collection, Customer, Order, ProductStatus } from '../types';
-import { INITIAL_ORDERS, INITIAL_CUSTOMERS } from '../mockData';
+import { INITIAL_CUSTOMERS } from '../mockData';
 import { 
   subscribeToProducts, 
   saveProductToFirestore, 
@@ -19,6 +19,11 @@ import {
   saveCustomerToFirestore,
   deleteCustomersFromFirestore
 } from '../lib/customerService';
+import {
+  subscribeToOrders,
+  saveOrderToFirestore,
+  deleteOrdersFromFirestore
+} from '../lib/orderService';
 
 interface AppContextType {
   products: Product[];
@@ -28,12 +33,15 @@ interface AppContextType {
   customers: Customer[];
   isLoadingCustomers: boolean;
   orders: Order[];
+  isLoadingOrders: boolean;
   isModalOpen: boolean;
   editingProduct: Product | null;
   isCollectionModalOpen: boolean;
   editingCollection: Collection | null;
   isCustomerModalOpen: boolean;
   editingCustomer: Customer | null;
+  isOrderModalOpen: boolean;
+  editingOrder: Order | null;
   isSearchOpen: boolean;
   toastMessage: string | null;
   setIsModalOpen: (open: boolean) => void;
@@ -42,6 +50,8 @@ interface AppContextType {
   setEditingCollection: (collection: Collection | null) => void;
   setIsCustomerModalOpen: (open: boolean) => void;
   setEditingCustomer: (customer: Customer | null) => void;
+  setIsOrderModalOpen: (open: boolean) => void;
+  setEditingOrder: (order: Order | null) => void;
   setIsSearchOpen: (open: boolean) => void;
   showToast: (msg: string) => void;
   handleSaveProduct: (productData: Partial<Product>) => Promise<void>;
@@ -51,6 +61,8 @@ interface AppContextType {
   handleDeleteCollection: (id: string) => Promise<void>;
   handleSaveCustomer: (customerData: Partial<Customer>) => Promise<void>;
   handleDeleteCustomers: (ids: string[]) => Promise<void>;
+  handleSaveOrder: (orderData: Partial<Order>) => Promise<void>;
+  handleDeleteOrders: (ids: string[]) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -65,7 +77,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [isLoadingCustomers, setIsLoadingCustomers] = useState<boolean>(true);
 
-  const [orders, setOrders] = useState<Order[]>(INITIAL_ORDERS);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [isLoadingOrders, setIsLoadingOrders] = useState<boolean>(true);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -75,6 +88,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
+
+  const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
+  const [editingOrder, setEditingOrder] = useState<Order | null>(null);
 
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -122,6 +138,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       (err) => {
         console.error('Error fetching customers from Firebase:', err);
         setIsLoadingCustomers(false);
+      }
+    );
+    return () => unsubscribe();
+  }, []);
+
+  // Subscribe to real-time orders from Firebase Firestore
+  useEffect(() => {
+    setIsLoadingOrders(true);
+    const unsubscribe = subscribeToOrders(
+      (fetchedOrders) => {
+        setOrders(fetchedOrders);
+        setIsLoadingOrders(false);
+      },
+      (err) => {
+        console.error('Error fetching orders from Firebase:', err);
+        setIsLoadingOrders(false);
       }
     );
     return () => unsubscribe();
@@ -229,6 +261,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const handleSaveOrder = async (orderData: Partial<Order>) => {
+    try {
+      const savedId = await saveOrderToFirestore(orderData);
+      showToast(
+        orderData.id 
+          ? `Updated order #${orderData.orderNumber || ''} successfully.` 
+          : `Saved order #${orderData.orderNumber || ''} to Firebase.`
+      );
+      setEditingOrder(null);
+    } catch (err: any) {
+      console.error('Failed to save order to Firebase:', err);
+      showToast(`Failed to save order: ${err.message || 'Firebase error'}`);
+    }
+  };
+
+  const handleDeleteOrders = async (ids: string[]) => {
+    try {
+      await deleteOrdersFromFirestore(ids);
+      showToast(`Deleted ${ids.length} order(s) from Firebase.`);
+    } catch (err: any) {
+      console.error('Failed to delete orders from Firebase:', err);
+      showToast(`Failed to delete orders: ${err.message || 'Firebase error'}`);
+    }
+  };
+
   return (
     <AppContext.Provider
       value={{
@@ -239,12 +296,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         customers,
         isLoadingCustomers,
         orders,
+        isLoadingOrders,
         isModalOpen,
         editingProduct,
         isCollectionModalOpen,
         editingCollection,
         isCustomerModalOpen,
         editingCustomer,
+        isOrderModalOpen,
+        editingOrder,
         isSearchOpen,
         toastMessage,
         setIsModalOpen,
@@ -253,6 +313,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setEditingCollection,
         setIsCustomerModalOpen,
         setEditingCustomer,
+        setIsOrderModalOpen,
+        setEditingOrder,
         setIsSearchOpen,
         showToast,
         handleSaveProduct,
@@ -261,7 +323,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         handleSaveCollection,
         handleDeleteCollection,
         handleSaveCustomer,
-        handleDeleteCustomers
+        handleDeleteCustomers,
+        handleSaveOrder,
+        handleDeleteOrders
       }}
     >
       {children}

@@ -132,15 +132,51 @@ export interface Customer {
   updatedAt?: string;
 }
 
+export interface OrderItem {
+  id: string;
+  productId: string;
+  productTitle: string;
+  productImage?: string;
+  color?: string;
+  size?: string;
+  quantity: number;
+  price: number;
+  total: number;
+}
+
+export interface OrderAddress {
+  addressLine1: string;
+  addressLine2?: string;
+  city: string;
+  state: string;
+  pincode: string;
+  country: string;
+}
+
 export interface Order {
   id: string;
-  orderNumber: string;
+  orderNumber: string; // Numeric-only ID e.g. "108429"
   date: string;
+  customerId?: string;
   customerName: string;
-  total: number;
+  customerEmail?: string;
+  customerPhone?: string;
+  items?: OrderItem[];
+  itemsCount: number;
+  subtotal?: number;
+  discount?: number;
+  deliveryCharges?: number;
+  taxes?: number;
+  taxPercentage?: number;
+  total: number; // Grand Total
   paymentStatus: 'Paid' | 'Pending' | 'Refunded';
   fulfillmentStatus: 'Fulfilled' | 'Unfulfilled' | 'In Progress';
-  itemsCount: number;
+  shippingAddress?: OrderAddress;
+  billingAddress?: OrderAddress;
+  isBillingSameAsShipping?: boolean;
+  notes?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface OverviewMetrics {
