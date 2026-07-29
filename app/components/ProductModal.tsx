@@ -21,6 +21,7 @@ import {
   Palette
 } from 'lucide-react';
 import { Product, ProductStatus, ProductVariation, VariationSizeItem } from '../types';
+import { useApp } from '../context/AppContext';
 
 interface ProductModalProps {
   isOpen: boolean;
@@ -64,6 +65,13 @@ export const ProductModal: React.FC<ProductModalProps> = ({
   onSave,
   initialProduct
 }) => {
+  const { collections: userCollections = [] } = useApp();
+
+  const allCollectionOptions = Array.from(new Set([
+    ...userCollections.map(c => c.name),
+    ...COLLECTIONS
+  ])).filter(Boolean);
+
   const [activeTab, setActiveTab] = useState<'basic' | 'pricing' | 'variations' | 'media' | 'settings'>('basic');
   const [isSaving, setIsSaving] = useState(false);
 
@@ -283,8 +291,18 @@ export const ProductModal: React.FC<ProductModalProps> = ({
     const finalVendor = vendor === 'Other' ? (customVendor.trim() || 'RS Fashions In-House') : vendor;
     const finalStatus: ProductStatus = isActive ? 'Active' : 'Draft';
     const parsedPrice = parseFloat(price) || 0;
-    const parsedInventory = parseInt(inventory, 10) || 0;
     const parsedDiscount = parseFloat(discountRupees) || 0;
+
+    let parsedInventory = parseInt(inventory, 10) || 0;
+    if (variations && variations.length > 0) {
+      let sum = 0;
+      variations.forEach(v => {
+        v.sizes.forEach(s => {
+          sum += Number(s.inventory || 0);
+        });
+      });
+      parsedInventory = sum;
+    }
 
     const productPayload: Partial<Product> = {
       id: initialProduct?.id,
@@ -450,7 +468,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({
                     onChange={(e) => setCollectionName(e.target.value)}
                     className="w-full bg-white border border-gray-300 rounded-xl px-3.5 py-2.5 text-xs text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900/20 focus:border-gray-900 transition cursor-pointer shadow-xs"
                   >
-                    {COLLECTIONS.map((c) => (
+                    {allCollectionOptions.map((c) => (
                       <option key={c} value={c}>{c}</option>
                     ))}
                   </select>

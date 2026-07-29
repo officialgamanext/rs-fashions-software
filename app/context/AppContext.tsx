@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Product, Order, Customer, ProductStatus } from '../types';
+import { Product, Collection, Order, Customer, ProductStatus } from '../types';
 import { INITIAL_ORDERS, INITIAL_CUSTOMERS } from '../mockData';
 import { 
   subscribeToProducts, 
@@ -9,23 +9,36 @@ import {
   deleteProductsFromFirestore, 
   updateProductsStatusInFirestore 
 } from '../lib/productService';
+import { 
+  subscribeToCollections, 
+  saveCollectionToFirestore, 
+  deleteCollectionFromFirestore 
+} from '../lib/collectionService';
 
 interface AppContextType {
   products: Product[];
   isLoadingProducts: boolean;
+  collections: Collection[];
+  isLoadingCollections: boolean;
   orders: Order[];
   customers: Customer[];
   isModalOpen: boolean;
   editingProduct: Product | null;
+  isCollectionModalOpen: boolean;
+  editingCollection: Collection | null;
   isSearchOpen: boolean;
   toastMessage: string | null;
   setIsModalOpen: (open: boolean) => void;
   setEditingProduct: (product: Product | null) => void;
+  setIsCollectionModalOpen: (open: boolean) => void;
+  setEditingCollection: (collection: Collection | null) => void;
   setIsSearchOpen: (open: boolean) => void;
   showToast: (msg: string) => void;
   handleSaveProduct: (productData: Partial<Product>) => Promise<void>;
   handleDeleteProducts: (ids: string[]) => Promise<void>;
   handleUpdateStatus: (ids: string[], status: ProductStatus) => Promise<void>;
+  handleSaveCollection: (collectionData: Partial<Collection>, selectedProductIds: string[]) => Promise<void>;
+  handleDeleteCollection: (id: string) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -33,11 +46,19 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [products, setProducts] = useState<Product[]>([]);
   const [isLoadingProducts, setIsLoadingProducts] = useState<boolean>(true);
+
+  const [collections, setCollections] = useState<Collection[]>([]);
+  const [isLoadingCollections, setIsLoadingCollections] = useState<boolean>(true);
+
   const [orders, setOrders] = useState<Order[]>(INITIAL_ORDERS);
   const [customers, setCustomers] = useState<Customer[]>(INITIAL_CUSTOMERS);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+
+  const [isCollectionModalOpen, setIsCollectionModalOpen] = useState(false);
+  const [editingCollection, setEditingCollection] = useState<Collection | null>(null);
+
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -53,6 +74,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         console.error('Error fetching products from Firebase:', err);
         setIsLoadingProducts(false);
         showToast('Error loading products from Firebase');
+      }
+    );
+    return () => unsubscribe();
+  }, []);
+
+  // Subscribe to real-time collections from Firebase Firestore
+  useEffect(() => {
+    setIsLoadingCollections(true);
+    const unsubscribe = subscribeToCollections(
+      (fetchedCollections) => {
+        setCollections(fetchedCollections);
+        setIsLoadingCollections(false);
+      },
+      (err) => {
+        console.error('Error fetching collections from Firebase:', err);
+        setIsLoadingCollections(false);
       }
     );
     return () => unsubscribe();
@@ -77,7 +114,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const handleSaveProduct = async (productData: Partial<Product>) => {
     try {
-      const savedId = await saveProductToFirestore(productData);
+      await saveProductToFirestore(productData);
       showToast(
         productData.id 
           ? `Updated "${productData.title || 'Product'}" successfully.` 
@@ -110,24 +147,57 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const handleSaveCollection = async (collectionData: Partial<Collection>, selectedProductIds: string[]) => {
+    try {
+      await saveCollectionToFirestore(collectionData, selectedProductIds);
+      showToast(
+        collectionData.id 
+          ? `Updated collection "${collectionData.name || 'Collection'}" successfully.` 
+          : `Created collection "${collectionData.name || 'Collection'}".`
+      );
+      setEditingCollection(null);
+    } catch (err: any) {
+      console.error('Failed to save collection:', err);
+      showToast(`Failed to save collection: ${err.message || 'Firebase error'}`);
+    }
+  };
+
+  const handleDeleteCollection = async (id: string) => {
+    try {
+      await deleteCollectionFromFirestore(id);
+      showToast(`Deleted collection successfully.`);
+    } catch (err: any) {
+      console.error('Failed to delete collection:', err);
+      showToast(`Failed to delete: ${err.message || 'Firebase error'}`);
+    }
+  };
+
   return (
     <AppContext.Provider
       value={{
         products,
         isLoadingProducts,
+        collections,
+        isLoadingCollections,
         orders,
         customers,
         isModalOpen,
         editingProduct,
+        isCollectionModalOpen,
+        editingCollection,
         isSearchOpen,
         toastMessage,
         setIsModalOpen,
         setEditingProduct,
+        setIsCollectionModalOpen,
+        setEditingCollection,
         setIsSearchOpen,
         showToast,
         handleSaveProduct,
         handleDeleteProducts,
-        handleUpdateStatus
+        handleUpdateStatus,
+        handleSaveCollection,
+        handleDeleteCollection
       }}
     >
       {children}

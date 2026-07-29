@@ -64,6 +64,17 @@ export interface Product {
   updatedAt?: string;
 }
 
+export interface Collection {
+  id: string;
+  name: string; // Collection Name
+  description?: string;
+  image?: string;
+  productIds: string[]; // Assigned product IDs
+  status?: 'Active' | 'Draft';
+  createdAt: string;
+  updatedAt?: string;
+}
+
 export interface Order {
   id: string;
   orderNumber: string;
