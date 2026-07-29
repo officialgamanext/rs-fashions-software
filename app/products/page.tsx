@@ -1,12 +1,13 @@
 'use client';
 
 import React from 'react';
-import { useApp } from './context/AppContext';
-import { ProductsView } from './components/ProductsView';
+import { useApp } from '../context/AppContext';
+import { ProductsView } from '../components/ProductsView';
 
-export default function HomePage() {
+export default function ProductsPage() {
   const {
     products,
+    isLoadingProducts,
     setIsModalOpen,
     setEditingProduct,
     handleDeleteProducts,
@@ -16,6 +17,7 @@ export default function HomePage() {
   return (
     <ProductsView
       products={products}
+      isLoadingProducts={isLoadingProducts}
       onAddProductClick={() => {
         setEditingProduct(null);
         setIsModalOpen(true);
