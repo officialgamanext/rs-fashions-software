@@ -8,16 +8,8 @@ import {
   ShoppingCart, 
   Tag, 
   Users, 
-  TrendingUp, 
   Percent, 
-  FileText, 
-  Globe, 
-  Landmark, 
   BarChart3, 
-  Store, 
-  Bot, 
-  Image as ImageIcon, 
-  Settings, 
   ChevronDown, 
   ChevronRight
 } from 'lucide-react';
@@ -43,11 +35,7 @@ export const Sidebar: React.FC = () => {
       ]
     },
     { href: '/customers', label: 'Customers', icon: Users },
-    { href: '/growth', label: 'Growth', icon: TrendingUp },
     { href: '/discounts', label: 'Discounts', icon: Percent },
-    { href: '/content', label: 'Content', icon: FileText },
-    { href: '/markets', label: 'Markets', icon: Globe },
-    { href: '/finance', label: 'Finance', icon: Landmark },
     { href: '/analytics', label: 'Analytics', icon: BarChart3 }
   ];
 
@@ -139,80 +127,6 @@ export const Sidebar: React.FC = () => {
             );
           })}
         </div>
-
-        {/* Sales Channels */}
-        <div className="pt-2 border-t border-[#d5d5d5]">
-          <div className="flex items-center justify-between px-2.5 pb-1 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
-            <span>Sales channels</span>
-            <button className="hover:bg-gray-300 p-0.5 rounded transition cursor-pointer">
-              <ChevronRight className="w-3 h-3 text-gray-500" />
-            </button>
-          </div>
-          <div className="space-y-0.5">
-            <Link 
-              href="/online-store"
-              className={`flex items-center space-x-2.5 px-2.5 py-1.5 rounded-lg transition cursor-pointer ${
-                pathname === '/online-store'
-                  ? 'bg-white text-gray-900 font-semibold shadow-sm'
-                  : 'text-gray-700 hover:bg-[#e1e1e1]'
-              }`}
-            >
-              <Store className="w-4 h-4 text-gray-600" />
-              <span>Online Store</span>
-            </Link>
-
-            <Link 
-              href="/agentic"
-              className={`flex items-center space-x-2.5 px-2.5 py-1.5 rounded-lg transition cursor-pointer ${
-                pathname === '/agentic'
-                  ? 'bg-white text-gray-900 font-semibold shadow-sm'
-                  : 'text-gray-700 hover:bg-[#e1e1e1]'
-              }`}
-            >
-              <Bot className="w-4 h-4 text-gray-600" />
-              <span>Agentic</span>
-            </Link>
-          </div>
-        </div>
-
-        {/* Apps */}
-        <div className="pt-2 border-t border-[#d5d5d5]">
-          <div className="flex items-center justify-between px-2.5 pb-1 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
-            <span>Apps</span>
-            <button className="hover:bg-gray-300 p-0.5 rounded transition cursor-pointer">
-              <ChevronRight className="w-3 h-3 text-gray-500" />
-            </button>
-          </div>
-          <div className="space-y-0.5">
-            <Link 
-              href="/export-images"
-              className={`flex items-center space-x-2.5 px-2.5 py-1.5 rounded-lg transition cursor-pointer ${
-                pathname === '/export-images'
-                  ? 'bg-white text-gray-900 font-semibold shadow-sm'
-                  : 'text-gray-700 hover:bg-[#e1e1e1]'
-              }`}
-            >
-              <ImageIcon className="w-4 h-4 text-gray-600" />
-              <span className="truncate">CS - Export Images</span>
-              <span className="w-1.5 h-1.5 rounded-full bg-blue-500 ml-auto"></span>
-            </Link>
-          </div>
-        </div>
-      </div>
-
-      {/* Footer Settings */}
-      <div className="p-2 border-t border-[#dcdcdc] bg-[#e6e6e6]">
-        <Link 
-          href="/settings"
-          className={`flex items-center space-x-2.5 px-2.5 py-2 rounded-lg transition cursor-pointer ${
-            pathname.startsWith('/settings') 
-              ? 'bg-white text-gray-900 font-semibold shadow-sm' 
-              : 'hover:bg-[#dcdcdc] text-gray-700'
-          }`}
-        >
-          <Settings className="w-4 h-4 text-gray-600" />
-          <span>Settings</span>
-        </Link>
       </div>
     </aside>
   );

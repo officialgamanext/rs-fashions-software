@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Search, Tag, ShoppingCart, Users, BarChart3, Settings, ArrowRight, X } from 'lucide-react';
+import { Search, Tag, ShoppingCart, Users, BarChart3, ArrowRight, X } from 'lucide-react';
 import { ViewType, Product } from '../types';
 
 interface QuickSearchModalProps {
@@ -50,7 +50,6 @@ export const QuickSearchModal: React.FC<QuickSearchModalProps> = ({
     { label: 'Orders', view: 'orders' as ViewType, icon: ShoppingCart },
     { label: 'Customers', view: 'customers' as ViewType, icon: Users },
     { label: 'Analytics', view: 'analytics' as ViewType, icon: BarChart3 },
-    { label: 'Settings', view: 'settings' as ViewType, icon: Settings },
   ];
 
   return (
@@ -144,7 +143,7 @@ export const QuickSearchModal: React.FC<QuickSearchModalProps> = ({
                     >
                       <div>
                         <div className="font-bold text-gray-900">{product.title}</div>
-                        <div className="text-[11px] text-gray-500">{product.category} • ${product.price.toFixed(2)}</div>
+                        <div className="text-[11px] text-gray-500">{product.category} • ₹{product.price}</div>
                       </div>
                       <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
                         product.inventory === 0 ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-800'
