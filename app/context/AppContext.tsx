@@ -51,6 +51,7 @@ interface AppContextType {
   isShippingModalOpen: boolean;
   editingShippingMethod: ShippingMethod | null;
   isSearchOpen: boolean;
+  isBulkUploadOpen: boolean;
   toastMessage: string | null;
   setIsModalOpen: (open: boolean) => void;
   setEditingProduct: (product: Product | null) => void;
@@ -63,6 +64,7 @@ interface AppContextType {
   setIsShippingModalOpen: (open: boolean) => void;
   setEditingShippingMethod: (method: ShippingMethod | null) => void;
   setIsSearchOpen: (open: boolean) => void;
+  setIsBulkUploadOpen: (open: boolean) => void;
   showToast: (msg: string) => void;
   handleSaveProduct: (productData: Partial<Product>) => Promise<void>;
   handleDeleteProducts: (ids: string[]) => Promise<void>;
@@ -111,6 +113,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [editingShippingMethod, setEditingShippingMethod] = useState<ShippingMethod | null>(null);
 
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isBulkUploadOpen, setIsBulkUploadOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Subscribe to real-time products from Firebase Firestore
@@ -369,6 +372,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         isShippingModalOpen,
         editingShippingMethod,
         isSearchOpen,
+        isBulkUploadOpen,
         toastMessage,
         setIsModalOpen,
         setEditingProduct,
@@ -381,6 +385,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setIsShippingModalOpen,
         setEditingShippingMethod,
         setIsSearchOpen,
+        setIsBulkUploadOpen,
         showToast,
         handleSaveProduct,
         handleDeleteProducts,

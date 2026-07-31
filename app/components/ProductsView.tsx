@@ -28,6 +28,7 @@ interface ProductsViewProps {
   products: Product[];
   isLoadingProducts?: boolean;
   onAddProductClick: () => void;
+  onBulkUploadClick: () => void;
   onEditProduct: (product: Product) => void;
   onDeleteProducts: (ids: string[]) => void;
   onUpdateStatus: (ids: string[], status: ProductStatus) => void;
@@ -37,6 +38,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
   products,
   isLoadingProducts = false,
   onAddProductClick,
+  onBulkUploadClick,
   onEditProduct,
   onDeleteProducts,
   onUpdateStatus
@@ -125,6 +127,14 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
           >
             <FileSpreadsheet className="w-3.5 h-3.5 text-gray-500" />
             <span>Export</span>
+          </button>
+
+          <button
+            onClick={onBulkUploadClick}
+            className="bg-white hover:bg-indigo-50 border border-indigo-300 text-indigo-700 text-xs font-semibold px-3 py-2 rounded-xl shadow-xs transition flex items-center space-x-1.5 cursor-pointer"
+          >
+            <Upload className="w-3.5 h-3.5" />
+            <span>Bulk Upload</span>
           </button>
 
           <button

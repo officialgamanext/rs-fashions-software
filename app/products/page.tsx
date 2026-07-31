@@ -12,6 +12,7 @@ export default function ProductsPage() {
     isLoadingProducts,
     setEditingProduct,
     setIsModalOpen,
+    setIsBulkUploadOpen,
     handleDeleteProducts,
     handleUpdateStatus
   } = useApp();
@@ -23,8 +24,8 @@ export default function ProductsPage() {
       onAddProductClick={() => {
         router.push('/products/add');
       }}
+      onBulkUploadClick={() => setIsBulkUploadOpen(true)}
       onEditProduct={(product) => {
-        // Edit still uses the modal (full data loaded from Firebase)
         setEditingProduct(product);
         setIsModalOpen(true);
       }}

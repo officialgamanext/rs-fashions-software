@@ -7,6 +7,7 @@ import { Navbar } from './Navbar';
 import { Sidebar } from './Sidebar';
 import { ProgressBar } from './ProgressBar';
 import { ProductModal } from './ProductModal';
+import { BulkUploadModal } from './BulkUploadModal';
 import { QuickSearchModal } from './QuickSearchModal';
 
 const InnerLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -16,10 +17,12 @@ const InnerLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     isModalOpen,
     editingProduct,
     isSearchOpen,
+    isBulkUploadOpen,
     toastMessage,
     setIsModalOpen,
     setEditingProduct,
     setIsSearchOpen,
+    setIsBulkUploadOpen,
     handleSaveProduct
   } = useApp();
 
@@ -53,6 +56,13 @@ const InnerLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         }}
         onSave={handleSaveProduct}
         initialProduct={editingProduct}
+      />
+
+      {/* Bulk Product Upload Modal */}
+      <BulkUploadModal
+        isOpen={isBulkUploadOpen}
+        onClose={() => setIsBulkUploadOpen(false)}
+        onImportComplete={() => setIsBulkUploadOpen(false)}
       />
 
       {/* Quick Search Ctrl+K Modal */}
