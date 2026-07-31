@@ -14,15 +14,23 @@ export type ProductStatus = 'Active' | 'Draft' | 'Archived';
 
 export interface VariationSizeItem {
   size: string;
+  sku?: string;       // Unique SKU for this specific size (e.g. RSF-ABC12-RED-M)
+  productId?: string; // Unique product ID for this size variant
   price?: number;
   inventory?: number;
+  barcode?: string;
+  barcodeUrl?: string;
 }
 
 export interface ProductVariation {
   id: string;
+  sku?: string;       // Unique SKU for this color variant (e.g. RSF-ABC12-RED)
+  productId?: string; // Unique product ID for this color variant
   color: string;
   colorHex?: string;
   sizes: VariationSizeItem[];
+  barcode?: string;
+  barcodeUrl?: string;
 }
 
 export interface Product {

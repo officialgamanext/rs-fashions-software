@@ -14,7 +14,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className="min-h-full flex flex-col bg-[#f1f1f1]">
+      <body className="min-h-full flex flex-col bg-[#f1f1f1]" suppressHydrationWarning>
         <ClientLayoutShell>{children}</ClientLayoutShell>
       </body>
     </html>

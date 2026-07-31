@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   X, 
   Save, 
@@ -18,10 +18,19 @@ import {
   Percent, 
   Building2, 
   Layers,
-  Palette
+  Palette,
+  QrCode,
+  ExternalLink,
+  Loader2,
+  Barcode,
+  Copy,
+  Hash,
+  CheckCheck
 } from 'lucide-react';
 import { Product, ProductStatus, ProductVariation, VariationSizeItem } from '../types';
 import { useApp } from '../context/AppContext';
+import { generateBarcodeDataUrl } from '../lib/barcodeService';
+import { uploadImageToImageKit } from '../lib/imagekitService';
 
 interface ProductModalProps {
   isOpen: boolean;
@@ -59,6 +68,80 @@ const STANDARD_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'Free Size'];
 
 const GST_OPTIONS = [0, 5, 12, 18, 28];
 
+// ─── ID & SKU Generators ──────────────────────────────────────────────────────
+
+/** Generate a parent product SKU: RSF-XXXXXX (6 alphanum chars) */
+function generateProductSku(): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let code = '';
+  for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
+  return `RSF-${code}`;
+}
+
+/** Generate a pre-determined Firestore-safe Product ID: PROD-xxxxxxxxxxxxxxxx (16 hex chars) */
+function generateProductId(): string {
+  const hex = Array.from({ length: 16 }, () =>
+    Math.floor(Math.random() * 16).toString(16)
+  ).join('');
+  return `PROD-${hex}`;
+}
+
+/** Generate a variant-level SKU from parent SKU + color */
+function generateVariantSku(parentSku: string, colorName: string): string {
+  const cleanColor = colorName
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '')
+    .substring(0, 5);
+  return `${parentSku}-${cleanColor || 'VAR'}`;
+}
+
+/** Generate a variant Product ID: VAR-xxxxxxxx */
+function generateVariantProductId(): string {
+  const hex = Array.from({ length: 8 }, () =>
+    Math.floor(Math.random() * 16).toString(16)
+  ).join('');
+  return `VAR-${hex}`;
+}
+
+/** Generate a size-level SKU from variant SKU + size */
+function generateSizeSku(variantSku: string, sizeName: string): string {
+  const cleanSize = sizeName.toUpperCase().replace(/[^A-Z0-9]/g, '').substring(0, 4);
+  return `${variantSku}-${cleanSize || 'SZ'}`;
+}
+
+/** Generate a size Product ID: SZE-xxxxxxxx */
+function generateSizeProductId(): string {
+  const hex = Array.from({ length: 8 }, () =>
+    Math.floor(Math.random() * 16).toString(16)
+  ).join('');
+  return `SZE-${hex}`;
+}
+
+// ─── CopyBadge helper ─────────────────────────────────────────────────────────
+
+function CopyBadge({ label, value }: { label: string; value: string }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = () => {
+    navigator.clipboard.writeText(value).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  };
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      title={`Copy ${label}`}
+      className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md bg-gray-100 border border-gray-200 text-[10px] font-mono text-gray-700 font-semibold hover:bg-gray-200 transition cursor-pointer"
+    >
+      {copied ? <CheckCheck className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3 text-gray-400" />}
+      <span className={copied ? 'text-emerald-600' : ''}>{value}</span>
+    </button>
+  );
+}
+
+// ─── Component ────────────────────────────────────────────────────────────────
+
 export const ProductModal: React.FC<ProductModalProps> = ({
   isOpen,
   onClose,
@@ -74,6 +157,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({
 
   const [activeTab, setActiveTab] = useState<'basic' | 'pricing' | 'variations' | 'media' | 'settings'>('basic');
   const [isSaving, setIsSaving] = useState(false);
+  const [savingStatusText, setSavingStatusText] = useState('');
 
   // Form Fields
   const [title, setTitle] = useState('');
@@ -89,9 +173,10 @@ export const ProductModal: React.FC<ProductModalProps> = ({
   const [discountRupees, setDiscountRupees] = useState('200');
   const [gstPercentage, setGstPercentage] = useState<number>(5);
 
-  // Inventory & SKU
+  // Inventory & SKU & Product ID
   const [inventory, setInventory] = useState('50');
   const [sku, setSku] = useState('');
+  const [productId, setProductId] = useState(''); // pre-generated Firestore doc ID
 
   // Variations (Color & Respective Sizes & Prices)
   const [variations, setVariations] = useState<ProductVariation[]>([]);
@@ -106,12 +191,6 @@ export const ProductModal: React.FC<ProductModalProps> = ({
   const [isActive, setIsActive] = useState(true);
   const [showInOnline, setShowInOnline] = useState(true);
   const [showInOffline, setShowInOffline] = useState(true);
-
-  // Auto-generate SKU helper
-  const generateNewSku = () => {
-    const randomCode = Math.random().toString(36).substring(2, 8).toUpperCase();
-    return `RSF-${randomCode}`;
-  };
 
   // Handle Escape key
   useEffect(() => {
@@ -146,7 +225,8 @@ export const ProductModal: React.FC<ProductModalProps> = ({
       setGstPercentage(initialProduct.gstPercentage ?? 5);
 
       setInventory(initialProduct.inventory ? initialProduct.inventory.toString() : '0');
-      setSku(initialProduct.sku || generateNewSku());
+      setSku(initialProduct.sku || generateProductSku());
+      setProductId(initialProduct.id); // existing product uses its real Firestore ID
 
       setVariations(initialProduct.variations || []);
       setMedia(initialProduct.media || []);
@@ -155,6 +235,10 @@ export const ProductModal: React.FC<ProductModalProps> = ({
       setShowInOnline(initialProduct.showInOnline ?? true);
       setShowInOffline(initialProduct.showInOffline ?? true);
     } else {
+      // NEW product — pre-generate IDs
+      const newSku = generateProductSku();
+      const newProdId = generateProductId();
+
       setTitle('');
       setShortDescription('');
       setLongDescription('');
@@ -168,26 +252,34 @@ export const ProductModal: React.FC<ProductModalProps> = ({
       setGstPercentage(5);
 
       setInventory('25');
-      setSku(generateNewSku());
+      setSku(newSku);
+      setProductId(newProdId);
 
-      // Default sample variations for immediate demo convenience
+      // Default sample variations — each gets unique IDs up-front
+      const var1Sku = generateVariantSku(newSku, 'Crimson Red');
+      const var2Sku = generateVariantSku(newSku, 'Royal Blue');
+
       setVariations([
         {
           id: 'var-1',
+          sku: var1Sku,
+          productId: generateVariantProductId(),
           color: 'Crimson Red',
           colorHex: '#dc2626',
           sizes: [
-            { size: 'S', price: 2499, inventory: 5 },
-            { size: 'M', price: 2499, inventory: 10 },
-            { size: 'L', price: 2499, inventory: 10 }
+            { size: 'S', sku: generateSizeSku(var1Sku, 'S'), productId: generateSizeProductId(), price: 2499, inventory: 5 },
+            { size: 'M', sku: generateSizeSku(var1Sku, 'M'), productId: generateSizeProductId(), price: 2499, inventory: 10 },
+            { size: 'L', sku: generateSizeSku(var1Sku, 'L'), productId: generateSizeProductId(), price: 2499, inventory: 10 }
           ]
         },
         {
           id: 'var-2',
+          sku: var2Sku,
+          productId: generateVariantProductId(),
           color: 'Royal Blue',
           colorHex: '#2563eb',
           sizes: [
-            { size: 'Free Size', price: 2499, inventory: 15 }
+            { size: 'Free Size', sku: generateSizeSku(var2Sku, 'Free Size'), productId: generateSizeProductId(), price: 2499, inventory: 15 }
           ]
         }
       ]);
@@ -205,11 +297,11 @@ export const ProductModal: React.FC<ProductModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Media File Upload Handler (Base64 conversion)
+  // ─── Media Handlers ─────────────────────────────────────────────────────────
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
-
     Array.from(files).forEach((file) => {
       const reader = new FileReader();
       reader.onloadend = () => {
@@ -221,27 +313,36 @@ export const ProductModal: React.FC<ProductModalProps> = ({
     });
   };
 
-  // Add Image URL Handler
   const handleAddImageUrl = () => {
     if (!imageUrlInput.trim()) return;
     setMedia(prev => [...prev, imageUrlInput.trim()]);
     setImageUrlInput('');
   };
 
-  // Remove Image
   const handleRemoveMedia = (index: number) => {
     setMedia(prev => prev.filter((_, i) => i !== index));
   };
 
-  // Variation Handlers
+  // ─── Variation Handlers ─────────────────────────────────────────────────────
+
   const handleAddColorVariation = () => {
     if (!newColorName.trim()) return;
+    const currentSku = sku.trim() || generateProductSku();
+    const varSku = generateVariantSku(currentSku, newColorName.trim());
     const newVar: ProductVariation = {
       id: `var-${Date.now()}`,
+      sku: varSku,
+      productId: generateVariantProductId(),
       color: newColorName.trim(),
       colorHex: newColorHex,
       sizes: [
-        { size: 'Free Size', price: parseFloat(price) || 0, inventory: 10 }
+        {
+          size: 'Free Size',
+          sku: generateSizeSku(varSku, 'Free Size'),
+          productId: generateSizeProductId(),
+          price: parseFloat(price) || 0,
+          inventory: 10
+        }
       ]
     };
     setVariations(prev => [...prev, newVar]);
@@ -260,9 +361,16 @@ export const ProductModal: React.FC<ProductModalProps> = ({
       if (sizeExists) {
         updatedSizes = v.sizes.filter(s => s.size !== sizeName);
       } else {
+        const varSku = v.sku || generateVariantSku(sku, v.color);
         updatedSizes = [
-          ...v.sizes, 
-          { size: sizeName, price: parseFloat(price) || 0, inventory: 5 }
+          ...v.sizes,
+          {
+            size: sizeName,
+            sku: generateSizeSku(varSku, sizeName),
+            productId: generateSizeProductId(),
+            price: parseFloat(price) || 0,
+            inventory: 5
+          }
         ];
       }
       return { ...v, sizes: updatedSizes };
@@ -282,30 +390,107 @@ export const ProductModal: React.FC<ProductModalProps> = ({
     }));
   };
 
-  // Submit Handler
+  // ─── Submit Handler ──────────────────────────────────────────────────────────
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
 
     setIsSaving(true);
+    setSavingStatusText('');
+
     const finalVendor = vendor === 'Other' ? (customVendor.trim() || 'RS Fashions In-House') : vendor;
     const finalStatus: ProductStatus = isActive ? 'Active' : 'Draft';
     const parsedPrice = parseFloat(price) || 0;
     const parsedDiscount = parseFloat(discountRupees) || 0;
 
+    // Total inventory = sum of all variant sizes (or manual if no variants)
     let parsedInventory = parseInt(inventory, 10) || 0;
     if (variations && variations.length > 0) {
-      let sum = 0;
-      variations.forEach(v => {
-        v.sizes.forEach(s => {
-          sum += Number(s.inventory || 0);
-        });
-      });
-      parsedInventory = sum;
+      parsedInventory = variations.reduce((sum, v) =>
+        sum + v.sizes.reduce((s2, s) => s2 + Number(s.inventory || 0), 0), 0
+      );
     }
 
+    const currentSku = sku.trim() || generateProductSku();
+    const currentProductId = productId.trim() || generateProductId();
+    let finalMedia = [...media];
+    let finalVariations = [...variations];
+
+    // ── Upload product images to ImageKit (always — both create & edit) ──────
+    if (media.length > 0) {
+      setSavingStatusText('Uploading product images to ImageKit...');
+      const uploadedMedia: string[] = [];
+      for (let i = 0; i < media.length; i++) {
+        const item = media[i];
+        const fileName = `product-${currentProductId}-img-${i + 1}.jpg`;
+        const ikUrl = await uploadImageToImageKit(item, fileName, '/product-images');
+        uploadedMedia.push(ikUrl);
+      }
+      finalMedia = uploadedMedia;
+    }
+
+    // ── Generate per-variant & per-size barcodes and upload to ImageKit ──────
+    if (variations.length > 0) {
+      setSavingStatusText('Generating & uploading variant barcodes...');
+      const updatedVars: ProductVariation[] = [];
+
+      for (let i = 0; i < variations.length; i++) {
+        const v = variations[i];
+
+        // Ensure variant has SKU & productId
+        const varSku = v.sku || generateVariantSku(currentSku, v.color);
+        const varProductId = v.productId || generateVariantProductId();
+        const varBarcodeCode = v.barcode || varSku;
+
+        // Generate & upload variant-level barcode
+        const varBarcodeDataUrl = generateBarcodeDataUrl(varBarcodeCode);
+        let varBarcodeUrl = v.barcodeUrl || '';
+        if (varBarcodeDataUrl) {
+          const barcodeFileName = `barcode-${currentProductId}-var-${i + 1}.png`;
+          varBarcodeUrl = await uploadImageToImageKit(varBarcodeDataUrl, barcodeFileName, '/barcodes');
+        }
+
+        // Per-size barcodes
+        const updatedSizes: VariationSizeItem[] = [];
+        for (const s of v.sizes) {
+          const sizeSku = s.sku || generateSizeSku(varSku, s.size);
+          const sizeProductId = s.productId || generateSizeProductId();
+          const sizeBarcodeCode = s.barcode || sizeSku;
+
+          const sizeBarcodeDataUrl = generateBarcodeDataUrl(sizeBarcodeCode);
+          let sizeBarcodeUrl = s.barcodeUrl || '';
+          if (sizeBarcodeDataUrl) {
+            const cleanSize = s.size.toUpperCase().replace(/[^A-Z0-9]/g, '');
+            const sizeBarcodeFileName = `barcode-${currentProductId}-var-${i + 1}-${cleanSize}.png`;
+            sizeBarcodeUrl = await uploadImageToImageKit(sizeBarcodeDataUrl, sizeBarcodeFileName, '/barcodes');
+          }
+
+          updatedSizes.push({
+            ...s,
+            sku: sizeSku,
+            productId: sizeProductId,
+            barcode: sizeBarcodeCode,
+            barcodeUrl: sizeBarcodeUrl
+          });
+        }
+
+        updatedVars.push({
+          ...v,
+          sku: varSku,
+          productId: varProductId,
+          barcode: varBarcodeCode,
+          barcodeUrl: varBarcodeUrl,
+          sizes: updatedSizes
+        });
+      }
+      finalVariations = updatedVars;
+    }
+
+    setSavingStatusText('Saving product to Firebase...');
+
     const productPayload: Partial<Product> = {
-      id: initialProduct?.id,
+      id: currentProductId,
       title: title.trim(),
       shortDescription: shortDescription.trim(),
       longDescription: longDescription.trim(),
@@ -315,10 +500,10 @@ export const ProductModal: React.FC<ProductModalProps> = ({
       compareAtPrice: compareAtPrice ? parseFloat(compareAtPrice) : undefined,
       discountRupees: parsedDiscount,
       gstPercentage: gstPercentage,
-      sku: sku.trim() || generateNewSku(),
+      sku: currentSku,
       inventory: parsedInventory,
-      variations,
-      media,
+      variations: finalVariations,
+      media: finalMedia,
       isActive,
       showInOnline,
       showInOffline,
@@ -335,11 +520,14 @@ export const ProductModal: React.FC<ProductModalProps> = ({
       await onSave(productPayload);
       onClose();
     } catch (err) {
-      console.error(err);
+      console.error('Error saving product:', err);
     } finally {
       setIsSaving(false);
+      setSavingStatusText('');
     }
   };
+
+  // ─── Render ──────────────────────────────────────────────────────────────────
 
   return (
     <div 
@@ -357,13 +545,13 @@ export const ProductModal: React.FC<ProductModalProps> = ({
               <Package className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-gray-900 flex items-center space-x-2">
+              <h2 className="text-base font-bold text-gray-900 flex items-center gap-2 flex-wrap">
                 <span>{initialProduct ? 'Edit Product' : 'Add New Product'}</span>
-                {initialProduct && (
-                  <span className="text-[10px] font-semibold bg-gray-100 text-gray-700 px-2 py-0.5 rounded-full border border-gray-200">
-                    ID: {initialProduct.id}
-                  </span>
-                )}
+                {/* Product ID badge */}
+                <span className="inline-flex items-center space-x-1 text-[10px] font-semibold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full border border-indigo-200">
+                  <Hash className="w-2.5 h-2.5" />
+                  <span>{productId || '—'}</span>
+                </span>
               </h2>
               <p className="text-xs text-gray-500">Configure product details, variations, media, pricing & inventory</p>
             </div>
@@ -411,7 +599,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({
         {/* Form Body */}
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-6">
           
-          {/* TAB 1: BASIC DETAILS */}
+          {/* ── TAB 1: BASIC DETAILS ── */}
           {activeTab === 'basic' && (
             <div className="space-y-5 animate-in fade-in duration-150">
               {/* Product Name */}
@@ -505,7 +693,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({
             </div>
           )}
 
-          {/* TAB 2: PRICING, TAXES & INVENTORY */}
+          {/* ── TAB 2: PRICING, TAXES & INVENTORY ── */}
           {activeTab === 'pricing' && (
             <div className="space-y-5 animate-in fade-in duration-150">
               {/* Price & Compare At Price */}
@@ -591,57 +779,105 @@ export const ProductModal: React.FC<ProductModalProps> = ({
                 </div>
               </div>
 
-              {/* Inventory & SKU */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-gray-50/70 p-4 rounded-xl border border-gray-200">
+              {/* Product ID, SKU & Inventory */}
+              <div className="bg-gray-50/70 p-4 rounded-xl border border-gray-200 space-y-4">
+                {/* Product ID row */}
                 <div>
                   <label className="block text-xs font-semibold text-gray-700 mb-1 flex items-center justify-between">
-                    <span>SKU ID (Auto generated & unique)</span>
+                    <span className="flex items-center space-x-1">
+                      <Hash className="w-3.5 h-3.5 text-indigo-500" />
+                      <span>Product ID (Firestore Document ID)</span>
+                    </span>
+                    {!initialProduct && (
+                      <button
+                        type="button"
+                        onClick={() => setProductId(generateProductId())}
+                        className="text-[11px] text-indigo-600 hover:text-indigo-800 flex items-center space-x-1 font-medium cursor-pointer"
+                      >
+                        <RefreshCw className="w-3 h-3" />
+                        <span>Re-generate</span>
+                      </button>
+                    )}
+                  </label>
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="text"
+                      readOnly={!!initialProduct}
+                      value={productId}
+                      onChange={(e) => !initialProduct && setProductId(e.target.value)}
+                      placeholder="PROD-xxxxxxxxxxxxxxxx"
+                      className="flex-1 bg-indigo-50 border border-indigo-200 rounded-xl px-3.5 py-2 text-xs font-mono font-bold text-indigo-900 focus:outline-none focus:ring-2 focus:ring-indigo-400 shadow-xs"
+                    />
                     <button
                       type="button"
-                      onClick={() => setSku(generateNewSku())}
-                      className="text-[11px] text-indigo-600 hover:text-indigo-800 flex items-center space-x-1 font-medium cursor-pointer"
+                      onClick={() => navigator.clipboard.writeText(productId)}
+                      className="p-2 rounded-xl bg-white border border-gray-200 hover:bg-gray-50 transition cursor-pointer"
+                      title="Copy Product ID"
                     >
-                      <RefreshCw className="w-3 h-3" />
-                      <span>Re-generate</span>
+                      <Copy className="w-3.5 h-3.5 text-gray-500" />
                     </button>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={sku}
-                    onChange={(e) => setSku(e.target.value)}
-                    placeholder="RSF-892102"
-                    className="w-full bg-white border border-gray-300 rounded-xl px-3.5 py-2 text-xs font-mono font-bold text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900 shadow-xs uppercase"
-                  />
+                  </div>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">
-                    Inventory Stock Count
-                  </label>
-                  <input
-                    type="number"
-                    value={inventory}
-                    onChange={(e) => setInventory(e.target.value)}
-                    placeholder="25"
-                    className="w-full bg-white border border-gray-300 rounded-xl px-3.5 py-2 text-xs font-bold text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900 shadow-xs"
-                  />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* SKU */}
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1 flex items-center justify-between">
+                      <span>SKU ID (Auto generated & unique)</span>
+                      <button
+                        type="button"
+                        onClick={() => setSku(generateProductSku())}
+                        className="text-[11px] text-indigo-600 hover:text-indigo-800 flex items-center space-x-1 font-medium cursor-pointer"
+                      >
+                        <RefreshCw className="w-3 h-3" />
+                        <span>Re-generate</span>
+                      </button>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={sku}
+                      onChange={(e) => setSku(e.target.value)}
+                      placeholder="RSF-ABC123"
+                      className="w-full bg-white border border-gray-300 rounded-xl px-3.5 py-2 text-xs font-mono font-bold text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900 shadow-xs uppercase"
+                    />
+                  </div>
+
+                  {/* Inventory */}
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">
+                      Inventory Stock Count
+                      {variations.length > 0 && (
+                        <span className="ml-1 text-[10px] font-normal text-gray-400">(auto-sum from variants)</span>
+                      )}
+                    </label>
+                    <input
+                      type="number"
+                      value={inventory}
+                      onChange={(e) => setInventory(e.target.value)}
+                      readOnly={variations.length > 0}
+                      placeholder="25"
+                      className={`w-full border border-gray-300 rounded-xl px-3.5 py-2 text-xs font-bold text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900 shadow-xs ${
+                        variations.length > 0 ? 'bg-gray-100 text-gray-500' : 'bg-white'
+                      }`}
+                    />
+                  </div>
                 </div>
               </div>
             </div>
           )}
 
-          {/* TAB 3: VARIATIONS (Color & Respective Sizes & Prices) */}
+          {/* ── TAB 3: VARIATIONS ── */}
           {activeTab === 'variations' && (
             <div className="space-y-5 animate-in fade-in duration-150">
               <div className="bg-indigo-50/60 border border-indigo-200 rounded-xl p-3.5 text-xs text-indigo-900 flex items-start space-x-2">
                 <Sparkles className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
                 <div>
-                  <span className="font-bold">Color & Respective Size Variations:</span> Add main color options (e.g. Crimson Red, Royal Blue). Under each color, select applicable sizes (S, M, L, XL, Free Size) and configure specific prices & inventory.
+                  <span className="font-bold">Color & Size Variations with Auto IDs:</span> Each color variant and each size gets a unique <strong>SKU</strong>, <strong>Product ID</strong>, and <strong>Barcode</strong> — all auto-generated and uploaded to ImageKit on save.
                 </div>
               </div>
 
-              {/* Add New Color Variation Control */}
+              {/* Add New Color Variation */}
               <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
                 <h4 className="text-xs font-bold text-gray-900 flex items-center space-x-1.5">
                   <Palette className="w-3.5 h-3.5 text-gray-700" />
@@ -660,6 +896,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({
                       type="text"
                       value={newColorName}
                       onChange={(e) => setNewColorName(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddColorVariation())}
                       placeholder="Color Name (e.g. Emerald Green, Dusty Pink)"
                       className="flex-1 bg-white border border-gray-300 rounded-xl px-3 py-1.5 text-xs text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900"
                     />
@@ -683,27 +920,66 @@ export const ProductModal: React.FC<ProductModalProps> = ({
                     No variations added yet. Add a color variation above to specify sizes & prices.
                   </div>
                 ) : (
-                  variations.map((v) => (
+                  variations.map((v, vi) => (
                     <div key={v.id} className="bg-white border border-gray-200 rounded-xl p-4 shadow-xs space-y-3">
-                      <div className="flex items-center justify-between border-b border-gray-100 pb-2">
-                        <div className="flex items-center space-x-2">
-                          <span 
-                            className="w-4 h-4 rounded-full border border-gray-300 shadow-xs inline-block" 
-                            style={{ backgroundColor: v.colorHex || '#999' }}
-                          />
-                          <span className="font-bold text-xs text-gray-900">{v.color}</span>
-                          <span className="text-[11px] text-gray-500 font-medium">
-                            ({v.sizes.length} size{v.sizes.length === 1 ? '' : 's'})
-                          </span>
+                      {/* Variant Header */}
+                      <div className="flex items-start justify-between border-b border-gray-100 pb-3 gap-2">
+                        <div className="flex flex-col gap-1.5 min-w-0">
+                          {/* Color name + swatch */}
+                          <div className="flex items-center space-x-2 flex-wrap gap-y-1">
+                            <span 
+                              className="w-4 h-4 rounded-full border border-gray-300 shadow-xs inline-block shrink-0" 
+                              style={{ backgroundColor: v.colorHex || '#999' }}
+                            />
+                            <span className="font-bold text-xs text-gray-900">{v.color}</span>
+                            <span className="text-[11px] text-gray-500 font-medium">
+                              ({v.sizes.length} size{v.sizes.length === 1 ? '' : 's'})
+                            </span>
+                          </div>
+
+                          {/* Variant IDs row */}
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {/* Variant SKU */}
+                            {v.sku && (
+                              <CopyBadge label="Variant SKU" value={v.sku} />
+                            )}
+                            {/* Variant Product ID */}
+                            {v.productId && (
+                              <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md bg-indigo-50 border border-indigo-200 text-[10px] font-mono text-indigo-700 font-semibold">
+                                <Hash className="w-2.5 h-2.5" />
+                                <span>{v.productId}</span>
+                              </span>
+                            )}
+                            {/* Barcode code */}
+                            {v.barcode && (
+                              <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md bg-gray-100 border border-gray-200 text-[10px] font-mono text-gray-700 font-semibold">
+                                <Barcode className="w-3 h-3 text-gray-500" />
+                                <span>{v.barcode}</span>
+                              </span>
+                            )}
+                            {/* ImageKit barcode link */}
+                            {v.barcodeUrl && (
+                              <a 
+                                href={v.barcodeUrl} 
+                                target="_blank" 
+                                rel="noreferrer"
+                                className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md bg-blue-50 border border-blue-200 text-[10px] font-medium text-blue-700 hover:bg-blue-100 transition"
+                                title="View Barcode Image on ImageKit"
+                              >
+                                <ExternalLink className="w-3 h-3" />
+                                <span>Barcode on ImageKit</span>
+                              </a>
+                            )}
+                          </div>
                         </div>
 
                         <button
                           type="button"
                           onClick={() => handleRemoveColorVariation(v.id)}
-                          className="text-red-500 hover:bg-red-50 p-1 rounded-lg text-xs transition cursor-pointer flex items-center space-x-1"
+                          className="text-red-500 hover:bg-red-50 p-1 rounded-lg text-xs transition cursor-pointer flex items-center space-x-1 shrink-0"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
-                          <span>Remove Color</span>
+                          <span>Remove</span>
                         </button>
                       </div>
 
@@ -733,36 +1009,60 @@ export const ProductModal: React.FC<ProductModalProps> = ({
                         </div>
                       </div>
 
-                      {/* Size Price & Inventory Matrix */}
+                      {/* Size Price & Inventory Matrix with IDs */}
                       {v.sizes.length > 0 && (
                         <div className="bg-gray-50/60 p-3 rounded-lg border border-gray-100 space-y-2">
                           <span className="block text-[11px] font-bold text-gray-700">
-                            Size Prices & Stock Overrides:
+                            Size Details (SKU · Product ID · Price · Stock):
                           </span>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <div className="space-y-2">
                             {v.sizes.map((s) => (
-                              <div key={s.size} className="bg-white border border-gray-200 p-2 rounded-lg flex items-center justify-between text-xs gap-2">
-                                <span className="font-bold text-gray-800 w-16">{s.size}</span>
-
-                                <div className="flex items-center space-x-1 flex-1">
-                                  <span className="text-[11px] text-gray-400 font-bold">₹</span>
-                                  <input
-                                    type="number"
-                                    value={s.price ?? price}
-                                    onChange={(e) => handleUpdateSizeDetails(v.id, s.size, 'price', parseFloat(e.target.value) || 0)}
-                                    placeholder="Price"
-                                    className="w-full bg-white border border-gray-300 rounded-md px-2 py-0.5 text-xs text-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900"
-                                  />
+                              <div key={s.size} className="bg-white border border-gray-200 p-2.5 rounded-lg space-y-1.5">
+                                {/* Size header: name + IDs */}
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  <span className="font-bold text-xs text-gray-800 w-14 shrink-0">{s.size}</span>
+                                  {s.sku && <CopyBadge label="Size SKU" value={s.sku} />}
+                                  {s.productId && (
+                                    <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md bg-purple-50 border border-purple-200 text-[10px] font-mono text-purple-700 font-semibold">
+                                      <Hash className="w-2.5 h-2.5" />
+                                      <span>{s.productId}</span>
+                                    </span>
+                                  )}
+                                  {s.barcodeUrl && (
+                                    <a
+                                      href={s.barcodeUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md bg-blue-50 border border-blue-200 text-[10px] font-medium text-blue-700 hover:bg-blue-100 transition"
+                                    >
+                                      <ExternalLink className="w-2.5 h-2.5" />
+                                      <span>Barcode</span>
+                                    </a>
+                                  )}
                                 </div>
 
-                                <div className="flex items-center space-x-1 w-20">
-                                  <span className="text-[10px] text-gray-400">Qty:</span>
-                                  <input
-                                    type="number"
-                                    value={s.inventory ?? 5}
-                                    onChange={(e) => handleUpdateSizeDetails(v.id, s.size, 'inventory', parseInt(e.target.value, 10) || 0)}
-                                    className="w-full bg-white border border-gray-300 rounded-md px-1.5 py-0.5 text-xs text-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900"
-                                  />
+                                {/* Price & Qty row */}
+                                <div className="flex items-center gap-2">
+                                  <div className="flex items-center space-x-1 flex-1">
+                                    <span className="text-[11px] text-gray-400 font-bold">₹</span>
+                                    <input
+                                      type="number"
+                                      value={s.price ?? price}
+                                      onChange={(e) => handleUpdateSizeDetails(v.id, s.size, 'price', parseFloat(e.target.value) || 0)}
+                                      placeholder="Price"
+                                      className="w-full bg-white border border-gray-300 rounded-md px-2 py-0.5 text-xs text-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900"
+                                    />
+                                  </div>
+
+                                  <div className="flex items-center space-x-1 w-24">
+                                    <span className="text-[10px] text-gray-400 whitespace-nowrap">Qty:</span>
+                                    <input
+                                      type="number"
+                                      value={s.inventory ?? 5}
+                                      onChange={(e) => handleUpdateSizeDetails(v.id, s.size, 'inventory', parseInt(e.target.value, 10) || 0)}
+                                      className="w-full bg-white border border-gray-300 rounded-md px-1.5 py-0.5 text-xs text-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900"
+                                    />
+                                  </div>
                                 </div>
                               </div>
                             ))}
@@ -776,9 +1076,17 @@ export const ProductModal: React.FC<ProductModalProps> = ({
             </div>
           )}
 
-          {/* TAB 4: MEDIA UPLOAD */}
+          {/* ── TAB 4: MEDIA UPLOAD ── */}
           {activeTab === 'media' && (
             <div className="space-y-5 animate-in fade-in duration-150">
+              {/* Upload info banner */}
+              <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-xs text-emerald-800 flex items-start space-x-2">
+                <Upload className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                <span>
+                  Images are uploaded to <strong>ImageKit</strong> automatically when you save. Only the final ImageKit URL is stored in Firebase.
+                </span>
+              </div>
+
               {/* File Upload Box */}
               <div className="border-2 border-dashed border-gray-300 rounded-2xl p-6 text-center hover:border-gray-900 transition bg-gray-50/50 relative">
                 <input
@@ -836,6 +1144,12 @@ export const ProductModal: React.FC<ProductModalProps> = ({
                         Main Thumbnail
                       </span>
                     )}
+                    {/* ImageKit uploaded badge */}
+                    {imgSrc.includes('ik.imagekit.io') && (
+                      <span className="absolute bottom-1.5 left-1.5 bg-emerald-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-md shadow-xs">
+                        ✓ ImageKit
+                      </span>
+                    )}
                     <button
                       type="button"
                       onClick={() => handleRemoveMedia(idx)}
@@ -850,10 +1164,10 @@ export const ProductModal: React.FC<ProductModalProps> = ({
             </div>
           )}
 
-          {/* TAB 5: CHANNELS & STATUS */}
+          {/* ── TAB 5: CHANNELS & STATUS ── */}
           {activeTab === 'settings' && (
             <div className="space-y-5 animate-in fade-in duration-150">
-              {/* Active Toggle (Yes / No) */}
+              {/* Active Toggle */}
               <div className="bg-white border border-gray-200 rounded-xl p-4 flex items-center justify-between shadow-xs">
                 <div>
                   <h4 className="text-xs font-bold text-gray-900">Product Active Status</h4>
@@ -876,7 +1190,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({
                 </div>
               </div>
 
-              {/* Show in Online / Offline Checkboxes */}
+              {/* Show in Online / Offline */}
               <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3 shadow-xs">
                 <h4 className="text-xs font-bold text-gray-900">Sales Channels Visibility</h4>
 
@@ -914,14 +1228,25 @@ export const ProductModal: React.FC<ProductModalProps> = ({
           {/* Footer Buttons */}
           <div className="pt-4 border-t border-gray-200 flex items-center justify-between bg-white sticky bottom-0">
             <div className="text-xs text-gray-500 font-medium hidden sm:block">
-              {sku && <span>SKU: <strong className="font-mono">{sku}</strong></span>}
+              {isSaving && savingStatusText ? (
+                <span className="text-indigo-600 font-semibold flex items-center space-x-1.5">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>{savingStatusText}</span>
+                </span>
+              ) : (
+                <span className="flex items-center gap-2 flex-wrap">
+                  {sku && <span>SKU: <strong className="font-mono">{sku}</strong></span>}
+                  {productId && <span className="text-indigo-500">ID: <strong className="font-mono">{productId}</strong></span>}
+                </span>
+              )}
             </div>
 
             <div className="flex items-center space-x-2 ml-auto">
               <button
                 type="button"
                 onClick={onClose}
-                className="bg-white border border-gray-300 hover:bg-gray-100 text-gray-700 text-xs font-semibold px-4 py-2 rounded-xl transition cursor-pointer"
+                disabled={isSaving}
+                className="bg-white border border-gray-300 hover:bg-gray-100 text-gray-700 text-xs font-semibold px-4 py-2 rounded-xl transition cursor-pointer disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -935,7 +1260,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({
                 ) : (
                   <Save className="w-4 h-4" />
                 )}
-                <span>{isSaving ? 'Saving to Firebase...' : 'Save Product'}</span>
+                <span>{isSaving ? (savingStatusText || 'Processing...') : 'Save Product'}</span>
               </button>
             </div>
           </div>

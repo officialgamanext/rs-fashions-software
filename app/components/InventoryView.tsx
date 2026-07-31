@@ -13,7 +13,9 @@ import {
   XCircle, 
   Layers, 
   Palette,
-  RefreshCw
+  RefreshCw,
+  Barcode,
+  ExternalLink
 } from 'lucide-react';
 import { Product, ProductVariation, VariationSizeItem } from '../types';
 
@@ -450,13 +452,33 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                               <div className="space-y-3">
                                 {draft.variations.map((v) => (
                                   <div key={v.id} className="bg-gray-50/70 border border-gray-200 rounded-xl p-3 space-y-2">
-                                    <div className="flex items-center space-x-2">
+                                    <div className="flex items-center space-x-2 flex-wrap gap-y-1">
                                       <span 
                                         className="w-4 h-4 rounded-full border border-gray-300 inline-block shadow-2xs" 
                                         style={{ backgroundColor: v.colorHex || '#888' }}
                                       />
                                       <span className="font-bold text-xs text-gray-900">{v.color}</span>
                                       <span className="text-[11px] text-gray-400">({v.sizes.length} sizes)</span>
+
+                                      {v.barcode && (
+                                        <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded bg-white border border-gray-200 text-[10px] font-mono text-gray-700 font-semibold">
+                                          <Barcode className="w-3 h-3 text-gray-500" />
+                                          <span>{v.barcode}</span>
+                                        </span>
+                                      )}
+
+                                      {v.barcodeUrl && (
+                                        <a 
+                                          href={v.barcodeUrl} 
+                                          target="_blank" 
+                                          rel="noreferrer"
+                                          className="inline-flex items-center space-x-1 px-2 py-0.5 rounded bg-blue-50 border border-blue-200 text-[10px] font-medium text-blue-700 hover:bg-blue-100 transition"
+                                          title="View Barcode Image on ImageKit"
+                                        >
+                                          <ExternalLink className="w-3 h-3" />
+                                          <span>Barcode Image</span>
+                                        </a>
+                                      )}
                                     </div>
 
                                     {/* Size Items Grid */}

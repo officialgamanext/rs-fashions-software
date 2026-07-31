@@ -9,7 +9,9 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@types/jsbarcode": "^3.11.4",
     "firebase": "^12.16.0",
+    "jsbarcode": "^3.12.3",
     "lucide-react": "^1.26.0",
     "next": "16.2.11",
     "react": "19.2.4",

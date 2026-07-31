@@ -74,15 +74,50 @@ export function subscribeToProducts(
 
 export async function saveProductToFirestore(productData: Partial<Product>): Promise<string> {
   if (productData.id) {
+    // Both updates to existing products AND new products with a pre-generated ID use this path
     const ref = doc(db, PRODUCTS_COLLECTION, productData.id);
-    const updatePayload: any = {
-      ...productData,
-      updatedAt: new Date().toISOString()
-    };
-    delete updatePayload.id;
-    await updateDoc(ref, updatePayload);
+    const existingDoc = await import('firebase/firestore').then(({ getDoc }) => getDoc(ref));
+
+    if (existingDoc.exists()) {
+      // Update existing product
+      const updatePayload: any = {
+        ...productData,
+        updatedAt: new Date().toISOString()
+      };
+      delete updatePayload.id;
+      await updateDoc(ref, updatePayload);
+    } else {
+      // New product with pre-generated ID — create it
+      const newProduct: Product = {
+        id: productData.id,
+        title: productData.title || 'Untitled Product',
+        shortDescription: productData.shortDescription || '',
+        longDescription: productData.longDescription || '',
+        collection: productData.collection || 'Sarees',
+        media: productData.media || [],
+        price: productData.price || 0,
+        compareAtPrice: productData.compareAtPrice,
+        sku: productData.sku || `RSF-${Math.floor(100000 + Math.random() * 900000)}`,
+        inventory: productData.inventory ?? 0,
+        variations: productData.variations || [],
+        isActive: productData.isActive ?? true,
+        showInOnline: productData.showInOnline ?? true,
+        showInOffline: productData.showInOffline ?? true,
+        gstPercentage: productData.gstPercentage ?? 5,
+        discountRupees: productData.discountRupees ?? 0,
+        vendor: productData.vendor || 'RS Fashions In-House',
+        status: productData.status || (productData.isActive ? 'Active' : 'Draft'),
+        category: productData.collection || 'Ethnic Wear',
+        productType: productData.productType || 'Fashion Wear',
+        channels: productData.channels ?? (productData.showInOnline ? 2 : 1),
+        catalogs: productData.catalogs ?? 1,
+        createdAt: new Date().toISOString().split('T')[0]
+      };
+      await setDoc(ref, newProduct);
+    }
     return productData.id;
   } else {
+    // Fallback: auto-generate Firestore doc ID (should rarely happen with new flow)
     const newDocRef = doc(collection(db, PRODUCTS_COLLECTION));
     const newProduct: Product = {
       id: newDocRef.id,
@@ -113,6 +148,7 @@ export async function saveProductToFirestore(productData: Partial<Product>): Pro
     return newDocRef.id;
   }
 }
+
 
 export async function deleteProductsFromFirestore(ids: string[]): Promise<void> {
   const batch = writeBatch(db);
