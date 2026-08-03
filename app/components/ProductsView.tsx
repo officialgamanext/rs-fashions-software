@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Tag, 
   Plus, 
@@ -23,6 +23,7 @@ import {
   Edit2
 } from 'lucide-react';
 import { Product, ProductStatus } from '../types';
+import { PaginationBar } from './PaginationBar';
 
 interface ProductsViewProps {
   products: Product[];
@@ -48,17 +49,31 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [selectedCollection, setSelectedCollection] = useState<string>('All');
 
-  // Filter products by tab, search query, and collection
-  const filteredProducts = products.filter((product) => {
-    const matchesTab = selectedTab === 'All' || product.status === selectedTab;
-    const matchesCollection = selectedCollection === 'All' || product.collection === selectedCollection;
-    const matchesSearch = 
-      (product.title || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (product.sku || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (product.collection || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (product.vendor || '').toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesTab && matchesCollection && matchesSearch;
-  });
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 45;
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, selectedTab, selectedCollection]);
+
+  // Filter products by tab, search query, and collection & sort newest at top
+  const filteredProducts = products
+    .filter((product) => {
+      const matchesTab = selectedTab === 'All' || product.status === selectedTab;
+      const matchesCollection = selectedCollection === 'All' || product.collection === selectedCollection;
+      const matchesSearch = 
+        (product.title || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (product.sku || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (product.collection || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (product.vendor || '').toLowerCase().includes(searchQuery.toLowerCase());
+      return matchesTab && matchesCollection && matchesSearch;
+    })
+    .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+
+  const totalPages = Math.ceil(filteredProducts.length / ITEMS_PER_PAGE) || 1;
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+  const endIndex = Math.min(startIndex + ITEMS_PER_PAGE, filteredProducts.length);
+  const paginatedProducts = filteredProducts.slice(startIndex, endIndex);
 
   // Calculate quick analytics from live Firebase data
   const totalStock = products.reduce((acc, p) => acc + (p.inventory || 0), 0);
@@ -323,7 +338,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {filteredProducts.map((product) => {
+                {paginatedProducts.map((product) => {
                   const isSelected = selectedIds.includes(product.id);
                   const isOutOfStock = (product.inventory || 0) === 0;
 
@@ -475,14 +490,15 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
           </div>
         )}
 
-        {/* Footer info */}
-        <div className="p-3.5 border-t border-gray-200 bg-gray-50/70 flex items-center justify-between text-xs text-gray-500 font-medium">
-          <span>Showing {filteredProducts.length} of {products.length} products</span>
-          <span className="flex items-center space-x-1">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span>Synced with Firebase Firestore</span>
-          </span>
-        </div>
+        {/* Pagination Controls */}
+        <PaginationBar
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={filteredProducts.length}
+          itemsPerPage={ITEMS_PER_PAGE}
+          onPageChange={(page) => setCurrentPage(page)}
+          itemLabel="products"
+        />
       </div>
     </div>
   );

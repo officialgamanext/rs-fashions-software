@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Package, 
   Search, 
@@ -18,6 +18,7 @@ import {
   ExternalLink
 } from 'lucide-react';
 import { Product, ProductVariation, VariationSizeItem } from '../types';
+import { PaginationBar } from './PaginationBar';
 
 interface InventoryViewProps {
   products: Product[];
@@ -33,6 +34,13 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTab, setSelectedTab] = useState<'All' | 'In Stock' | 'Low Stock' | 'Out of Stock'>('All');
   const [expandedProductIds, setExpandedProductIds] = useState<string[]>([]);
+  
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 45;
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, selectedTab]);
   
   // Local state for tracking unsaved stock changes per product
   // Format: { [productId]: { inventory: number, variations: ProductVariation[] } }
@@ -69,47 +77,40 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
     setEditedStockMap(prev => ({
       ...prev,
       [product.id]: {
-        ...(prev[product.id] || { variations: product.variations || [] }),
+        ...getDraftProductStock(product),
         inventory: safeInv
       }
     }));
   };
 
-  // Handler for editing specific size stock inside a variation
-  const handleVariationSizeStockChange = (
+  // Handler for editing specific variation size stock count
+  const handleSizeInventoryChange = (
     product: Product,
     varId: string,
     sizeName: string,
-    newSizeStock: number
+    newInventory: number
   ) => {
-    const safeStock = Math.max(0, newSizeStock);
-    const currentDraft = getDraftProductStock(product);
-
-    // Update size stock inside variations array
-    const updatedVariations = currentDraft.variations.map(v => {
+    const safeInv = Math.max(0, newInventory);
+    const draft = getDraftProductStock(product);
+    const updatedVars = (draft.variations || []).map(v => {
       if (v.id !== varId) return v;
-      const updatedSizes = v.sizes.map(s => {
-        if (s.size === sizeName) {
-          return { ...s, inventory: safeStock };
-        }
-        return s;
+      const updatedSizes = (v.sizes || []).map(s => {
+        if (s.size !== sizeName) return s;
+        return { ...s, inventory: safeInv };
       });
       return { ...v, sizes: updatedSizes };
     });
 
-    // Recalculate total product inventory from all variation sizes
-    let newTotalInventory = 0;
-    updatedVariations.forEach(v => {
-      v.sizes.forEach(s => {
-        newTotalInventory += Number(s.inventory || 0);
-      });
-    });
+    // Re-calculate total product inventory as sum of all variation sizes
+    const totalVariantStock = updatedVars.reduce((acc, v) => {
+      return acc + (v.sizes || []).reduce((sAcc, s) => sAcc + (s.inventory || 0), 0);
+    }, 0);
 
     setEditedStockMap(prev => ({
       ...prev,
       [product.id]: {
-        inventory: newTotalInventory,
-        variations: updatedVariations
+        inventory: totalVariantStock,
+        variations: updatedVars
       }
     }));
   };
@@ -121,7 +122,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
 
     setEditedStockMap(prev => ({
       ...prev,
-      [product.id]: { ...prev[product.id], isSaving: true }
+      [product.id]: { ...draft, isSaving: true }
     }));
 
     try {
@@ -145,23 +146,30 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
     }
   };
 
-  // Filter products by tab and search
-  const filteredProducts = products.filter((product) => {
-    const draft = getDraftProductStock(product);
-    const inv = draft.inventory;
+  // Filter products by tab and search & sort newest at top
+  const filteredProducts = products
+    .filter((product) => {
+      const draft = getDraftProductStock(product);
+      const inv = draft.inventory;
 
-    let matchesTab = true;
-    if (selectedTab === 'In Stock') matchesTab = inv > 0;
-    if (selectedTab === 'Low Stock') matchesTab = inv > 0 && inv <= 10;
-    if (selectedTab === 'Out of Stock') matchesTab = inv === 0;
+      let matchesTab = true;
+      if (selectedTab === 'In Stock') matchesTab = inv > 0;
+      if (selectedTab === 'Low Stock') matchesTab = inv > 0 && inv <= 10;
+      if (selectedTab === 'Out of Stock') matchesTab = inv === 0;
 
-    const matchesSearch = 
-      (product.title || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (product.sku || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (product.collection || '').toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesSearch = 
+        (product.title || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (product.sku || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (product.collection || '').toLowerCase().includes(searchQuery.toLowerCase());
 
-    return matchesTab && matchesSearch;
-  });
+      return matchesTab && matchesSearch;
+    })
+    .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+
+  const totalPages = Math.ceil(filteredProducts.length / ITEMS_PER_PAGE) || 1;
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+  const endIndex = Math.min(startIndex + ITEMS_PER_PAGE, filteredProducts.length);
+  const paginatedProducts = filteredProducts.slice(startIndex, endIndex);
 
   // Calculate quick metrics
   const totalProductsCount = products.length;
@@ -303,7 +311,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {filteredProducts.map((product) => {
+                {paginatedProducts.map((product) => {
                   const isExpanded = expandedProductIds.includes(product.id);
                   const draft = getDraftProductStock(product);
                   const hasVariations = draft.variations && draft.variations.length > 0;
@@ -496,7 +504,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                                               type="number"
                                               min="0"
                                               value={s.inventory ?? 0}
-                                              onChange={(e) => handleVariationSizeStockChange(
+                                              onChange={(e) => handleSizeInventoryChange(
                                                 product,
                                                 v.id,
                                                 s.size,
@@ -536,6 +544,16 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
             </table>
           </div>
         )}
+
+        {/* Pagination Controls */}
+        <PaginationBar
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={filteredProducts.length}
+          itemsPerPage={ITEMS_PER_PAGE}
+          onPageChange={(page) => setCurrentPage(page)}
+          itemLabel="products in inventory"
+        />
       </div>
     </div>
   );

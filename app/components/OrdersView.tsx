@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   ShoppingCart, 
   Plus, 
@@ -18,6 +18,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { Order } from '../types';
+import { PaginationBar } from './PaginationBar';
 
 interface OrdersViewProps {
   orders: Order[];
@@ -39,6 +40,13 @@ export const OrdersView: React.FC<OrdersViewProps> = ({
   const [fulfillmentFilter, setFulfillmentFilter] = useState<string>('All');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 45;
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, paymentFilter, fulfillmentFilter]);
+
   // Filter out offline POS sales (offline sales are displayed separately under Offline Sales tab)
   const onlineOrders = orders.filter(o => {
     const isOffline = 
@@ -53,17 +61,24 @@ export const OrdersView: React.FC<OrdersViewProps> = ({
   const paidOrdersCount = onlineOrders.filter(o => o.paymentStatus === 'Paid').length;
   const unfulfilledCount = onlineOrders.filter(o => o.fulfillmentStatus === 'Unfulfilled' || o.fulfillmentStatus === 'In Progress').length;
 
-  const filteredOrders = onlineOrders.filter((order) => {
-    const matchesSearch = 
-      (order.orderNumber || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (order.customerName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (order.customerEmail || '').toLowerCase().includes(searchQuery.toLowerCase());
+  const filteredOrders = onlineOrders
+    .filter((order) => {
+      const matchesSearch = 
+        (order.orderNumber || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (order.customerName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (order.customerEmail || '').toLowerCase().includes(searchQuery.toLowerCase());
 
-    const matchesPayment = paymentFilter === 'All' || order.paymentStatus === paymentFilter;
-    const matchesFulfillment = fulfillmentFilter === 'All' || order.fulfillmentStatus === fulfillmentFilter;
+      const matchesPayment = paymentFilter === 'All' || order.paymentStatus === paymentFilter;
+      const matchesFulfillment = fulfillmentFilter === 'All' || order.fulfillmentStatus === fulfillmentFilter;
 
-    return matchesSearch && matchesPayment && matchesFulfillment;
-  });
+      return matchesSearch && matchesPayment && matchesFulfillment;
+    })
+    .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+
+  const totalPages = Math.ceil(filteredOrders.length / ITEMS_PER_PAGE) || 1;
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+  const endIndex = Math.min(startIndex + ITEMS_PER_PAGE, filteredOrders.length);
+  const paginatedOrders = filteredOrders.slice(startIndex, endIndex);
 
   const isAllSelected = filteredOrders.length > 0 && selectedIds.length === filteredOrders.length;
   const toggleSelectAll = () => {
@@ -272,7 +287,7 @@ export const OrdersView: React.FC<OrdersViewProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {filteredOrders.map((ord) => {
+                {paginatedOrders.map((ord) => {
                   const isSelected = selectedIds.includes(ord.id);
                   const cleanNumericId = String(ord.orderNumber || '').replace(/\D/g, '') || ord.id.slice(0, 6);
 
@@ -379,14 +394,15 @@ export const OrdersView: React.FC<OrdersViewProps> = ({
           </div>
         )}
 
-        {/* Footer Info */}
-        <div className="p-3.5 border-t border-gray-200 bg-gray-50/70 flex items-center justify-between text-xs text-gray-500 font-medium">
-          <span>Showing {filteredOrders.length} of {orders.length} orders</span>
-          <span className="flex items-center space-x-1">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span>Synced with Firebase Firestore</span>
-          </span>
-        </div>
+        {/* Pagination Controls */}
+        <PaginationBar
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={filteredOrders.length}
+          itemsPerPage={ITEMS_PER_PAGE}
+          onPageChange={(page) => setCurrentPage(page)}
+          itemLabel="orders"
+        />
       </div>
     </div>
   );

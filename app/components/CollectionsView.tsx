@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   FolderPlus, 
   Plus, 
@@ -14,6 +14,7 @@ import {
   ArrowRight
 } from 'lucide-react';
 import { Collection, Product } from '../types';
+import { PaginationBar } from './PaginationBar';
 
 interface CollectionsViewProps {
   collections: Collection[];
@@ -33,11 +34,24 @@ export const CollectionsView: React.FC<CollectionsViewProps> = ({
   onDeleteCollection
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 45;
 
-  const filteredCollections = collections.filter(c =>
-    (c.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (c.description || '').toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery]);
+
+  const filteredCollections = collections
+    .filter(c =>
+      (c.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (c.description || '').toLowerCase().includes(searchQuery.toLowerCase())
+    )
+    .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+
+  const totalPages = Math.ceil(filteredCollections.length / ITEMS_PER_PAGE) || 1;
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+  const endIndex = Math.min(startIndex + ITEMS_PER_PAGE, filteredCollections.length);
+  const paginatedCollections = filteredCollections.slice(startIndex, endIndex);
 
   const totalAssignedProducts = collections.reduce((acc, c) => acc + (c.productIds ? c.productIds.length : 0), 0);
 
@@ -146,93 +160,105 @@ export const CollectionsView: React.FC<CollectionsViewProps> = ({
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-4">
-            {filteredCollections.map((col) => {
-              const previewProducts = getProductPreviews(col.productIds || []);
-              const count = col.productIds ? col.productIds.length : 0;
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-4">
+              {paginatedCollections.map((col) => {
+                const previewProducts = getProductPreviews(col.productIds || []);
+                const count = col.productIds ? col.productIds.length : 0;
 
-              return (
-                <div 
-                  key={col.id} 
-                  className="bg-white border border-gray-200 rounded-2xl p-4 shadow-xs hover:shadow-md transition-shadow space-y-3 flex flex-col justify-between group"
-                >
-                  <div className="space-y-2">
-                    {/* Banner Image or Icon Header */}
-                    <div className="relative h-28 rounded-xl overflow-hidden bg-gray-100 border border-gray-100">
-                      {col.image ? (
-                        <img src={col.image} alt={col.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
-                      ) : (
-                        <div className="w-full h-full bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center text-white">
-                          <Folder className="w-10 h-10 opacity-80" />
+                return (
+                  <div 
+                    key={col.id} 
+                    className="bg-white border border-gray-200 rounded-2xl p-4 shadow-xs hover:shadow-md transition-shadow space-y-3 flex flex-col justify-between group"
+                  >
+                    <div className="space-y-2">
+                      {/* Banner Image or Icon Header */}
+                      <div className="relative h-28 rounded-xl overflow-hidden bg-gray-100 border border-gray-100">
+                        {col.image ? (
+                          <img src={col.image} alt={col.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                        ) : (
+                          <div className="w-full h-full bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center text-white">
+                            <Folder className="w-10 h-10 opacity-80" />
+                          </div>
+                        )}
+
+                        <div className="absolute top-2 right-2 flex items-center space-x-1 bg-white/90 backdrop-blur-xs p-1 rounded-lg border border-gray-200 shadow-2xs">
+                          <button
+                            onClick={() => onEditCollection(col)}
+                            className="p-1 text-gray-700 hover:text-indigo-600 transition cursor-pointer"
+                            title="Edit Collection"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (confirm(`Delete collection "${col.name}"?`)) {
+                                onDeleteCollection(col.id);
+                              }
+                            }}
+                            className="p-1 text-red-600 hover:bg-red-50 rounded-md transition cursor-pointer"
+                            title="Delete Collection"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
-                      )}
+                      </div>
 
-                      <div className="absolute top-2 right-2 flex items-center space-x-1 bg-white/90 backdrop-blur-xs p-1 rounded-lg border border-gray-200 shadow-2xs">
-                        <button
-                          onClick={() => onEditCollection(col)}
-                          className="p-1 text-gray-700 hover:text-indigo-600 transition cursor-pointer"
-                          title="Edit Collection"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => {
-                            if (confirm(`Delete collection "${col.name}"?`)) {
-                              onDeleteCollection(col.id);
-                            }
-                          }}
-                          className="p-1 text-red-600 hover:bg-red-50 rounded-md transition cursor-pointer"
-                          title="Delete Collection"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                      {/* Collection Title & Description */}
+                      <div>
+                        <h3 className="font-bold text-sm text-gray-900 group-hover:text-indigo-600 transition flex items-center justify-between">
+                          <span>{col.name}</span>
+                          <span className="text-[11px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded-full">
+                            {count} Product{count === 1 ? '' : 's'}
+                          </span>
+                        </h3>
+                        {col.description && (
+                          <p className="text-xs text-gray-500 mt-1 line-clamp-2">{col.description}</p>
+                        )}
                       </div>
                     </div>
 
-                    {/* Collection Title & Description */}
-                    <div>
-                      <h3 className="font-bold text-sm text-gray-900 group-hover:text-indigo-600 transition flex items-center justify-between">
-                        <span>{col.name}</span>
-                        <span className="text-[11px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded-full">
-                          {count} Product{count === 1 ? '' : 's'}
-                        </span>
-                      </h3>
-                      {col.description && (
-                        <p className="text-xs text-gray-500 mt-1 line-clamp-2">{col.description}</p>
-                      )}
+                    {/* Assigned Products Thumbnails Preview */}
+                    <div className="pt-2 border-t border-gray-100 flex items-center justify-between">
+                      <div className="flex items-center space-x-1.5">
+                        {previewProducts.length > 0 ? (
+                          previewProducts.map((p) => (
+                            <img
+                              key={p.id}
+                              src={p.media && p.media.length > 0 ? p.media[0] : ''}
+                              alt={p.title}
+                              title={p.title}
+                              className="w-7 h-7 rounded-lg object-cover border border-gray-200 bg-gray-100 shadow-2xs"
+                            />
+                          ))
+                        ) : (
+                          <span className="text-[11px] text-gray-400 italic">No products assigned</span>
+                        )}
+                      </div>
+
+                      <button
+                        onClick={() => onEditCollection(col)}
+                        className="text-xs text-indigo-600 hover:text-indigo-800 font-semibold flex items-center space-x-1 cursor-pointer"
+                      >
+                        <span>Manage</span>
+                        <ArrowRight className="w-3 h-3" />
+                      </button>
                     </div>
                   </div>
+                );
+              })}
+            </div>
 
-                  {/* Assigned Products Thumbnails Preview */}
-                  <div className="pt-2 border-t border-gray-100 flex items-center justify-between">
-                    <div className="flex items-center space-x-1.5">
-                      {previewProducts.length > 0 ? (
-                        previewProducts.map((p) => (
-                          <img
-                            key={p.id}
-                            src={p.media && p.media.length > 0 ? p.media[0] : ''}
-                            alt={p.title}
-                            title={p.title}
-                            className="w-7 h-7 rounded-lg object-cover border border-gray-200 bg-gray-100 shadow-2xs"
-                          />
-                        ))
-                      ) : (
-                        <span className="text-[11px] text-gray-400 italic">No products assigned</span>
-                      )}
-                    </div>
-
-                    <button
-                      onClick={() => onEditCollection(col)}
-                      className="text-xs text-indigo-600 hover:text-indigo-800 font-semibold flex items-center space-x-1 cursor-pointer"
-                    >
-                      <span>Manage</span>
-                      <ArrowRight className="w-3 h-3" />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+            {/* Pagination Controls */}
+            <PaginationBar
+              currentPage={currentPage}
+              totalPages={totalPages}
+              totalItems={filteredCollections.length}
+              itemsPerPage={ITEMS_PER_PAGE}
+              onPageChange={(page) => setCurrentPage(page)}
+              itemLabel="collections"
+            />
+          </>
         )}
       </div>
     </div>

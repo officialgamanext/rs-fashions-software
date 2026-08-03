@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Users, 
   Plus, 
@@ -17,6 +17,7 @@ import {
   MessageSquare
 } from 'lucide-react';
 import { Customer } from '../types';
+import { PaginationBar } from './PaginationBar';
 
 interface CustomersViewProps {
   customers: Customer[];
@@ -37,14 +38,28 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [segmentInput, setSegmentInput] = useState('');
 
-  const filteredCustomers = customers.filter((customer) => {
-    const matchesSearch = 
-      (customer.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (customer.email || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (customer.phoneNumber || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (customer.location || '').toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesSearch;
-  });
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 45;
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery]);
+
+  const filteredCustomers = customers
+    .filter((customer) => {
+      const matchesSearch = 
+        (customer.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (customer.email || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (customer.phoneNumber || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (customer.location || '').toLowerCase().includes(searchQuery.toLowerCase());
+      return matchesSearch;
+    })
+    .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+
+  const totalPages = Math.ceil(filteredCustomers.length / ITEMS_PER_PAGE) || 1;
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+  const endIndex = Math.min(startIndex + ITEMS_PER_PAGE, filteredCustomers.length);
+  const paginatedCustomers = filteredCustomers.slice(startIndex, endIndex);
 
   const isAllSelected = filteredCustomers.length > 0 && selectedIds.length === filteredCustomers.length;
   const toggleSelectAll = () => {
@@ -214,7 +229,7 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {filteredCustomers.map((c) => {
+                {paginatedCustomers.map((c) => {
                   const isSelected = selectedIds.includes(c.id);
 
                   return (
@@ -308,14 +323,15 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
           </div>
         )}
 
-        {/* Footer info matching screenshot 2 */}
-        <div className="p-3.5 border-t border-gray-200 bg-gray-50/70 flex items-center justify-between text-xs text-gray-500 font-medium">
-          <span>Showing {filteredCustomers.length} of {customers.length} customers</span>
-          <span className="flex items-center space-x-1">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span>Synced with Firebase Firestore</span>
-          </span>
-        </div>
+        {/* Pagination Controls */}
+        <PaginationBar
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={filteredCustomers.length}
+          itemsPerPage={ITEMS_PER_PAGE}
+          onPageChange={(page) => setCurrentPage(page)}
+          itemLabel="customers"
+        />
       </div>
     </div>
   );

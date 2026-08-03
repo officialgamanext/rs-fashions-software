@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Receipt, 
   Search, 
@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { Order } from '../types';
+import { PaginationBar } from './PaginationBar';
 
 export const OfflineSalesView: React.FC = () => {
   const { orders, isLoadingOrders } = useApp();
@@ -28,45 +29,59 @@ export const OfflineSalesView: React.FC = () => {
   const [paymentFilter, setPaymentFilter] = useState<'all' | 'Cash' | 'UPI' | 'Card'>('all');
   const [selectedOrderForInvoice, setSelectedOrderForInvoice] = useState<Order | null>(null);
 
-  // Filter settled bills (offline orders / completed bills)
-  const settledBills = orders.filter(order => {
-    // Search query match
-    const matchesSearch = 
-      (order.orderNumber || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (order.customerName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (order.customerPhone || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (order.id || '').toLowerCase().includes(searchQuery.toLowerCase());
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 45;
 
-    // Date filter match
-    let matchesDate = true;
-    if (dateFilter !== 'all' && order.createdAt) {
-      const orderDate = new Date(order.createdAt);
-      const now = new Date();
-      if (dateFilter === 'today') {
-        matchesDate = orderDate.toDateString() === now.toDateString();
-      } else if (dateFilter === 'week') {
-        const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-        matchesDate = orderDate >= oneWeekAgo;
-      } else if (dateFilter === 'month') {
-        matchesDate = orderDate.getMonth() === now.getMonth() && orderDate.getFullYear() === now.getFullYear();
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, dateFilter, paymentFilter]);
+
+  // Filter settled bills (offline orders / completed bills) & sort newest at top
+  const settledBills = orders
+    .filter(order => {
+      // Search query match
+      const matchesSearch = 
+        (order.orderNumber || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (order.customerName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (order.customerPhone || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (order.id || '').toLowerCase().includes(searchQuery.toLowerCase());
+
+      // Date filter match
+      let matchesDate = true;
+      if (dateFilter !== 'all' && order.createdAt) {
+        const orderDate = new Date(order.createdAt);
+        const now = new Date();
+        if (dateFilter === 'today') {
+          matchesDate = orderDate.toDateString() === now.toDateString();
+        } else if (dateFilter === 'week') {
+          const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+          matchesDate = orderDate >= oneWeekAgo;
+        } else if (dateFilter === 'month') {
+          matchesDate = orderDate.getMonth() === now.getMonth() && orderDate.getFullYear() === now.getFullYear();
+        }
       }
-    }
 
-    // Payment method match
-    let matchesPayment = true;
-    if (paymentFilter !== 'all') {
-      const notes = (order.notes || '').toLowerCase();
-      if (paymentFilter === 'Cash') {
-        matchesPayment = notes.includes('cash') || !notes.includes('upi') && !notes.includes('card');
-      } else if (paymentFilter === 'UPI') {
-        matchesPayment = notes.includes('upi') || notes.includes('qr');
-      } else if (paymentFilter === 'Card') {
-        matchesPayment = notes.includes('card');
+      // Payment method match
+      let matchesPayment = true;
+      if (paymentFilter !== 'all') {
+        const notes = (order.notes || '').toLowerCase();
+        if (paymentFilter === 'Cash') {
+          matchesPayment = notes.includes('cash') || (!notes.includes('upi') && !notes.includes('card'));
+        } else if (paymentFilter === 'UPI') {
+          matchesPayment = notes.includes('upi') || notes.includes('qr');
+        } else if (paymentFilter === 'Card') {
+          matchesPayment = notes.includes('card');
+        }
       }
-    }
 
-    return matchesSearch && matchesDate && matchesPayment;
-  });
+      return matchesSearch && matchesDate && matchesPayment;
+    })
+    .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+
+  const totalPages = Math.ceil(settledBills.length / ITEMS_PER_PAGE) || 1;
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+  const endIndex = Math.min(startIndex + ITEMS_PER_PAGE, settledBills.length);
+  const paginatedBills = settledBills.slice(startIndex, endIndex);
 
   // Calculate Metrics
   const totalRevenue = settledBills.reduce((acc, order) => acc + (order.total || 0), 0);
@@ -225,7 +240,7 @@ export const OfflineSalesView: React.FC = () => {
                   </td>
                 </tr>
               ) : (
-                settledBills.map((order) => {
+                paginatedBills.map((order) => {
                   const notes = (order.notes || '').toLowerCase();
                   let methodBadge = { label: 'Cash', color: 'bg-emerald-100 text-emerald-800 border-emerald-200' };
                   if (notes.includes('upi') || notes.includes('qr')) {
@@ -281,6 +296,16 @@ export const OfflineSalesView: React.FC = () => {
             </tbody>
           </table>
         </div>
+
+        {/* Pagination Controls */}
+        <PaginationBar
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={settledBills.length}
+          itemsPerPage={ITEMS_PER_PAGE}
+          onPageChange={(page) => setCurrentPage(page)}
+          itemLabel="settled offline bills"
+        />
       </div>
 
       {/* PRINTABLE / DETAILED INVOICE MODAL */}

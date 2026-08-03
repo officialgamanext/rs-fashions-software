@@ -155,26 +155,43 @@ export default function AddProductPage() {
   const [productId, setProductId] = useState(initProdId);
   const [inventory, setInventory] = useState('25');
 
+  const { usedBarcodes, maxCounter } = extractUsedBarcodes(products);
+  const barcodeCounterRef = useRef({ value: maxCounter });
+
+  useEffect(() => {
+    if (maxCounter > barcodeCounterRef.current.value) {
+      barcodeCounterRef.current.value = maxCounter;
+    }
+  }, [maxCounter]);
+
   // Variations
   const [variations, setVariations] = useState<ProductVariation[]>(() => {
     const s1 = initSku;
     const var1Sku = generateVariantSku(s1, 'Crimson Red');
     const var2Sku = generateVariantSku(s1, 'Royal Blue');
+    const cRef = { value: 100000 };
+    const b1 = generateRSFNumericBarcode(new Set(), cRef);
+    const b1s1 = generateRSFNumericBarcode(new Set(), cRef);
+    const b1s2 = generateRSFNumericBarcode(new Set(), cRef);
+    const b1s3 = generateRSFNumericBarcode(new Set(), cRef);
+    const b2 = generateRSFNumericBarcode(new Set(), cRef);
+    const b2s1 = generateRSFNumericBarcode(new Set(), cRef);
+
     return [
       {
         id: 'var-1', sku: var1Sku, productId: generateVariantProductId(),
-        color: 'Crimson Red', colorHex: '#dc2626',
+        color: 'Crimson Red', colorHex: '#dc2626', barcode: b1,
         sizes: [
-          { size: 'S', sku: generateSizeSku(var1Sku, 'S'), productId: generateSizeProductId(), price: 2499, inventory: 5 },
-          { size: 'M', sku: generateSizeSku(var1Sku, 'M'), productId: generateSizeProductId(), price: 2499, inventory: 10 },
-          { size: 'L', sku: generateSizeSku(var1Sku, 'L'), productId: generateSizeProductId(), price: 2499, inventory: 10 },
+          { size: 'S', sku: generateSizeSku(var1Sku, 'S'), productId: generateSizeProductId(), barcode: b1s1, price: 2499, inventory: 5 },
+          { size: 'M', sku: generateSizeSku(var1Sku, 'M'), productId: generateSizeProductId(), barcode: b1s2, price: 2499, inventory: 10 },
+          { size: 'L', sku: generateSizeSku(var1Sku, 'L'), productId: generateSizeProductId(), barcode: b1s3, price: 2499, inventory: 10 },
         ]
       },
       {
         id: 'var-2', sku: var2Sku, productId: generateVariantProductId(),
-        color: 'Royal Blue', colorHex: '#2563eb',
+        color: 'Royal Blue', colorHex: '#2563eb', barcode: b2,
         sizes: [
-          { size: 'Free Size', sku: generateSizeSku(var2Sku, 'Free Size'), productId: generateSizeProductId(), price: 2499, inventory: 15 }
+          { size: 'Free Size', sku: generateSizeSku(var2Sku, 'Free Size'), productId: generateSizeProductId(), barcode: b2s1, price: 2499, inventory: 15 }
         ]
       }
     ];
@@ -218,16 +235,20 @@ export default function AddProductPage() {
     if (!newColorName.trim()) return;
     const currentSku = sku.trim() || generateProductSku();
     const varSku = generateVariantSku(currentSku, newColorName.trim());
+    const varBarcode = generateRSFNumericBarcode(usedBarcodes, barcodeCounterRef.current);
+    const sizeBarcode = generateRSFNumericBarcode(usedBarcodes, barcodeCounterRef.current);
     const newVar: ProductVariation = {
       id: `var-${Date.now()}`,
       sku: varSku,
       productId: generateVariantProductId(),
       color: newColorName.trim(),
       colorHex: newColorHex,
+      barcode: varBarcode,
       sizes: [{
         size: 'Free Size',
         sku: generateSizeSku(varSku, 'Free Size'),
         productId: generateSizeProductId(),
+        barcode: sizeBarcode,
         price: parseFloat(price) || 0,
         inventory: 10
       }]
@@ -251,6 +272,7 @@ export default function AddProductPage() {
             size: sizeName,
             sku: generateSizeSku(varSku, sizeName),
             productId: generateSizeProductId(),
+            barcode: generateRSFNumericBarcode(usedBarcodes, barcodeCounterRef.current),
             price: parseFloat(price) || 0,
             inventory: 5
           }];
@@ -671,7 +693,7 @@ export default function AddProductPage() {
                       </div>
                     ) : (
                       variations.map((v, vi) => {
-                        const varBarcodeCode = v.barcode || v.sku || generateVariantSku(sku, v.color);
+                        const varBarcodeCode = (v.barcode && /^RSF-\d+$/i.test(v.barcode)) ? v.barcode : (v.barcode || `RSF-${100001 + vi}`);
                         return (
                           <div key={v.id} className="bg-white border border-gray-200 rounded-2xl shadow-xs overflow-hidden">
                             {/* Variant header */}
@@ -741,8 +763,8 @@ export default function AddProductPage() {
                                 <div className="bg-gray-50 rounded-xl border border-gray-100 p-3 space-y-2">
                                   <span className="block text-[11px] font-bold text-gray-700">Size Details (SKU · Product ID · Barcode · Price · Stock):</span>
                                   <div className="space-y-2">
-                                    {v.sizes.map(s => {
-                                      const sizeBarcodeCode = s.barcode || s.sku || generateSizeSku(v.sku || '', s.size);
+                                    {v.sizes.map((s, si) => {
+                                      const sizeBarcodeCode = (s.barcode && /^RSF-\d+$/i.test(s.barcode)) ? s.barcode : (s.barcode || `RSF-${100002 + si}`);
                                       return (
                                         <div key={s.size} className="bg-white border border-gray-200 rounded-xl p-3 space-y-2">
                                           {/* Size header row */}

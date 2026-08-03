@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   X, 
   Save, 
@@ -29,7 +29,7 @@ import {
 } from 'lucide-react';
 import { Product, ProductStatus, ProductVariation, VariationSizeItem } from '../types';
 import { useApp } from '../context/AppContext';
-import { generateBarcodeDataUrl } from '../lib/barcodeService';
+import { generateBarcodeDataUrl, generateRSFNumericBarcode, extractUsedBarcodes } from '../lib/barcodeService';
 import { uploadImageToImageKit } from '../lib/imagekitService';
 
 interface ProductModalProps {
@@ -148,7 +148,16 @@ export const ProductModal: React.FC<ProductModalProps> = ({
   onSave,
   initialProduct
 }) => {
-  const { collections: userCollections = [] } = useApp();
+  const { collections: userCollections = [], products = [] } = useApp();
+
+  const { usedBarcodes, maxCounter } = extractUsedBarcodes(products);
+  const barcodeCounterRef = useRef({ value: maxCounter });
+
+  useEffect(() => {
+    if (maxCounter > barcodeCounterRef.current.value) {
+      barcodeCounterRef.current.value = maxCounter;
+    }
+  }, [maxCounter]);
 
   const allCollectionOptions = Array.from(new Set([
     ...userCollections.map(c => c.name),
@@ -329,17 +338,21 @@ export const ProductModal: React.FC<ProductModalProps> = ({
     if (!newColorName.trim()) return;
     const currentSku = sku.trim() || generateProductSku();
     const varSku = generateVariantSku(currentSku, newColorName.trim());
+    const varBarcode = generateRSFNumericBarcode(usedBarcodes, barcodeCounterRef.current);
+    const sizeBarcode = generateRSFNumericBarcode(usedBarcodes, barcodeCounterRef.current);
     const newVar: ProductVariation = {
       id: `var-${Date.now()}`,
       sku: varSku,
       productId: generateVariantProductId(),
       color: newColorName.trim(),
       colorHex: newColorHex,
+      barcode: varBarcode,
       sizes: [
         {
           size: 'Free Size',
           sku: generateSizeSku(varSku, 'Free Size'),
           productId: generateSizeProductId(),
+          barcode: sizeBarcode,
           price: parseFloat(price) || 0,
           inventory: 10
         }
@@ -368,6 +381,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({
             size: sizeName,
             sku: generateSizeSku(varSku, sizeName),
             productId: generateSizeProductId(),
+            barcode: generateRSFNumericBarcode(usedBarcodes, barcodeCounterRef.current),
             price: parseFloat(price) || 0,
             inventory: 5
           }
@@ -441,7 +455,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({
         // Ensure variant has SKU & productId
         const varSku = v.sku || generateVariantSku(currentSku, v.color);
         const varProductId = v.productId || generateVariantProductId();
-        const varBarcodeCode = v.barcode || varSku;
+        const varBarcodeCode = (v.barcode && /^RSF-\d+$/i.test(v.barcode)) ? v.barcode : generateRSFNumericBarcode(usedBarcodes, barcodeCounterRef.current);
 
         // Generate & upload variant-level barcode
         const varBarcodeDataUrl = generateBarcodeDataUrl(varBarcodeCode);
@@ -456,7 +470,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({
         for (const s of v.sizes) {
           const sizeSku = s.sku || generateSizeSku(varSku, s.size);
           const sizeProductId = s.productId || generateSizeProductId();
-          const sizeBarcodeCode = s.barcode || sizeSku;
+          const sizeBarcodeCode = (s.barcode && /^RSF-\d+$/i.test(s.barcode)) ? s.barcode : generateRSFNumericBarcode(usedBarcodes, barcodeCounterRef.current);
 
           const sizeBarcodeDataUrl = generateBarcodeDataUrl(sizeBarcodeCode);
           let sizeBarcodeUrl = s.barcodeUrl || '';
