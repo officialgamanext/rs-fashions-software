@@ -23,6 +23,8 @@ export interface SavedBillItem {
   price: number;
   quantity: number;
   total: number;
+  gstPercentage?: number;
+  gstAmount?: number;
 }
 
 export interface SavedBill {
@@ -174,6 +176,8 @@ export interface OrderItem {
   quantity: number;
   price: number;
   total: number;
+  gstPercentage?: number;
+  gstAmount?: number;
 }
 
 export interface OrderAddress {

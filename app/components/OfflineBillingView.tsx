@@ -105,9 +105,14 @@ export const OfflineBillingView: React.FC = () => {
     return matchesSearch && matchesCategory;
   });
 
-  // Calculate Subtotal, Tax, Total
+  // Calculate Subtotal, Item-Wise Tax, Total
   const subtotal = cartItems.reduce((sum, item) => sum + item.total, 0);
-  const calculatedTax = Math.round((subtotal - discountRupees) * (taxPercentage / 100));
+  const calculatedTax = cartItems.reduce((sum, item) => {
+    const itemGst = item.gstAmount !== undefined 
+      ? item.gstAmount 
+      : Math.round(item.total * ((item.gstPercentage ?? 5) / 100));
+    return sum + itemGst;
+  }, 0);
   const grandTotal = Math.max(0, subtotal - discountRupees + calculatedTax);
   const itemsCount = cartItems.reduce((acc, i) => acc + i.quantity, 0);
 
@@ -136,15 +141,17 @@ export const OfflineBillingView: React.FC = () => {
     return null;
   };
 
-  // Add Item to Bill
+  // Add Item to Bill (inherits product.gstPercentage or defaults to 5%)
   const addItemToBill = (product: Product, variant?: { color?: string; size?: string; price?: number; sku?: string }) => {
     const price = variant?.price || product.price || 0;
     const sku = variant?.sku || product.sku || product.id;
     const color = variant?.color;
     const size = variant?.size;
+    const gstPct = product.gstPercentage !== undefined ? product.gstPercentage : 5;
+    const itemTotal = price * 1;
+    const itemGstAmt = Math.round(itemTotal * (gstPct / 100));
 
     setCartItems(prevItems => {
-      // Check if item already in cart with same product & variant
       const existingIndex = prevItems.findIndex(i => 
         i.productId === product.id && i.color === color && i.size === size
       );
@@ -153,10 +160,15 @@ export const OfflineBillingView: React.FC = () => {
         const updated = [...prevItems];
         const currentItem = updated[existingIndex];
         const newQty = currentItem.quantity + 1;
+        const newTotal = currentItem.price * newQty;
+        const currentGstPct = currentItem.gstPercentage !== undefined ? currentItem.gstPercentage : gstPct;
+        const newGstAmt = Math.round(newTotal * (currentGstPct / 100));
         updated[existingIndex] = {
           ...currentItem,
           quantity: newQty,
-          total: currentItem.price * newQty
+          total: newTotal,
+          gstPercentage: currentGstPct,
+          gstAmount: newGstAmt
         };
         return updated;
       } else {
@@ -170,7 +182,9 @@ export const OfflineBillingView: React.FC = () => {
           productImage: (product.media && product.media.length > 0) ? product.media[0] : undefined,
           price: price,
           quantity: 1,
-          total: price
+          total: itemTotal,
+          gstPercentage: gstPct,
+          gstAmount: itemGstAmt
         };
         return [...prevItems, newItem];
       }
@@ -189,20 +203,39 @@ export const OfflineBillingView: React.FC = () => {
     }
   };
 
-  // Update Item Quantity
+  // Update Item Quantity (recalculates item-wise GST)
   const updateQuantity = (itemId: string, delta: number) => {
     setCartItems(prev => prev.map(item => {
       if (item.id === itemId) {
         const newQty = item.quantity + delta;
         if (newQty <= 0) return null;
+        const newTotal = item.price * newQty;
+        const gstPct = item.gstPercentage !== undefined ? item.gstPercentage : 5;
+        const newGstAmt = Math.round(newTotal * (gstPct / 100));
         return {
           ...item,
           quantity: newQty,
-          total: item.price * newQty
+          total: newTotal,
+          gstAmount: newGstAmt
         };
       }
       return item;
     }).filter(Boolean) as SavedBillItem[]);
+  };
+
+  // Update Item GST percentage
+  const updateItemGst = (itemId: string, newGstPct: number) => {
+    setCartItems(prev => prev.map(item => {
+      if (item.id === itemId) {
+        const newGstAmt = Math.round(item.total * (newGstPct / 100));
+        return {
+          ...item,
+          gstPercentage: newGstPct,
+          gstAmount: newGstAmt
+        };
+      }
+      return item;
+    }));
   };
 
   // Remove Item
@@ -297,17 +330,23 @@ export const OfflineBillingView: React.FC = () => {
     try {
       const cleanNumericOrderId = billNumber.replace(/\D/g, '') || `${100000 + Math.floor(Math.random() * 900000)}`;
 
-      const orderItems: OrderItem[] = JSON.parse(JSON.stringify(cartItems.map(item => ({
-        id: item.id,
-        productId: item.productId,
-        productTitle: item.productTitle,
-        productImage: item.productImage || '',
-        color: item.color || '',
-        size: item.size || '',
-        quantity: item.quantity,
-        price: item.price,
-        total: item.total
-      }))));
+      const orderItems: OrderItem[] = JSON.parse(JSON.stringify(cartItems.map(item => {
+        const gstPct = item.gstPercentage !== undefined ? item.gstPercentage : 5;
+        const gstAmt = item.gstAmount !== undefined ? item.gstAmount : Math.round(item.total * (gstPct / 100));
+        return {
+          id: item.id,
+          productId: item.productId,
+          productTitle: item.productTitle,
+          productImage: item.productImage || '',
+          color: item.color || '',
+          size: item.size || '',
+          quantity: item.quantity,
+          price: item.price,
+          total: item.total,
+          gstPercentage: gstPct,
+          gstAmount: gstAmt
+        };
+      })));
 
       const settledPayload = {
         orderNumber: cleanNumericOrderId,
@@ -358,6 +397,37 @@ export const OfflineBillingView: React.FC = () => {
   const cashTenderedVal = Number(cashTendered) || 0;
   const changeDue = Math.max(0, cashTenderedVal - grandTotal);
 
+  // Global Hardware USB & Bluetooth Barcode Scanner Listener
+  useEffect(() => {
+    let buffer = '';
+    let lastKeyTime = Date.now();
+
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      const currentTime = Date.now();
+      const timeDiff = currentTime - lastKeyTime;
+      lastKeyTime = currentTime;
+
+      // Reset buffer if gap between keypresses > 60ms (human typing)
+      if (timeDiff > 60) {
+        buffer = '';
+      }
+
+      if (e.key === 'Enter') {
+        if (buffer.trim().length >= 3) {
+          e.preventDefault();
+          const scannedCode = buffer.trim();
+          handleBarcodeScan(scannedCode);
+          buffer = '';
+        }
+      } else if (e.key.length === 1) {
+        buffer += e.key;
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [products, cartItems]);
+
   return (
     <div className="p-4 sm:p-6 space-y-4 max-w-7xl mx-auto select-none font-sans">
       {/* Top Header Bar */}
@@ -367,10 +437,16 @@ export const OfflineBillingView: React.FC = () => {
             <ScanBarcode className="w-6 h-6 text-emerald-600" />
             <span>Offline POS Billing</span>
           </h1>
-          <p className="text-xs text-gray-500 mt-0.5">High-speed barcode scanner & fast item billing point-of-sale</p>
+          <p className="text-xs text-gray-500 mt-0.5">High-speed camera & USB/Bluetooth hardware barcode scanner point-of-sale</p>
         </div>
 
         <div className="flex items-center space-x-2.5">
+          {/* Hardware Scanner Ready Badge */}
+          <span className="hidden md:flex items-center space-x-1.5 px-2.5 py-1.5 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg text-xs font-bold">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span>USB & Bluetooth Scanner Ready</span>
+          </span>
+
           {/* Saved Bills Drawer Button */}
           <button
             onClick={() => setIsSavedBillsOpen(true)}
@@ -632,10 +708,28 @@ export const OfflineBillingView: React.FC = () => {
 
                     <div className="min-w-0 flex-1">
                       <h4 className="font-bold text-gray-900 truncate">{item.productTitle}</h4>
-                      <div className="text-[10px] text-gray-500 font-mono flex items-center space-x-1">
+                      <div className="text-[10px] text-gray-500 font-mono flex flex-wrap items-center gap-1.5 mt-0.5">
                         <span>₹{item.price}</span>
                         {item.color && <span>• {item.color}</span>}
                         {item.size && <span>• {item.size}</span>}
+                        <span className="text-gray-300">|</span>
+                        <div className="inline-flex items-center space-x-1 bg-gray-100 px-1 py-0.5 rounded text-[10px]">
+                          <span className="text-gray-600 font-medium">GST:</span>
+                          <select
+                            value={item.gstPercentage ?? 5}
+                            onChange={(e) => updateItemGst(item.id, Number(e.target.value))}
+                            className="bg-white border border-gray-300 rounded text-[9px] font-bold px-1 py-0"
+                          >
+                            <option value={0}>0%</option>
+                            <option value={5}>5%</option>
+                            <option value={12}>12%</option>
+                            <option value={18}>18%</option>
+                            <option value={28}>28%</option>
+                          </select>
+                          <span className="text-emerald-700 font-bold">
+                            (+₹{item.gstAmount ?? Math.round(item.total * ((item.gstPercentage ?? 5) / 100))})
+                          </span>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -692,22 +786,12 @@ export const OfflineBillingView: React.FC = () => {
               />
             </div>
 
-            {/* Tax / GST Row */}
+            {/* Item-Wise Tax / GST Row */}
             <div className="flex justify-between items-center text-gray-600">
               <div className="flex items-center space-x-1">
-                <span>GST Tax</span>
-                <select
-                  value={taxPercentage}
-                  onChange={(e) => setTaxPercentage(Number(e.target.value))}
-                  className="bg-white border border-gray-300 rounded text-[10px] font-bold px-1 py-0.5"
-                >
-                  <option value={0}>0%</option>
-                  <option value={5}>5%</option>
-                  <option value={12}>12%</option>
-                  <option value={18}>18%</option>
-                </select>
+                <span>Total Tax (Item-Wise GST)</span>
               </div>
-              <span className="font-bold text-gray-900">₹{calculatedTax}</span>
+              <span className="font-bold text-emerald-700">₹{calculatedTax}</span>
             </div>
 
             <div className="border-t border-gray-200 pt-2 flex justify-between items-center text-sm font-extrabold text-gray-900">
@@ -998,10 +1082,15 @@ export const OfflineBillingView: React.FC = () => {
               </div>
 
               {/* Items List */}
-              <div className="border-t border-b border-dashed border-gray-300 py-2 space-y-1 text-[11px]">
+              <div className="border-t border-b border-dashed border-gray-300 py-2 space-y-1.5 text-[11px]">
                 {settledReceipt.items.map((item: any) => (
-                  <div key={item.id} className="flex justify-between">
-                    <span className="truncate pr-2">{item.quantity}x {item.productTitle}</span>
+                  <div key={item.id} className="flex justify-between items-start">
+                    <div className="truncate pr-2">
+                      <div className="font-bold">{item.quantity}x {item.productTitle}</div>
+                      <div className="text-[9px] text-gray-500 font-mono">
+                        GST ({item.gstPercentage ?? 5}%): +₹{item.gstAmount ?? Math.round(item.total * ((item.gstPercentage ?? 5) / 100))}
+                      </div>
+                    </div>
                     <span className="font-bold shrink-0">₹{item.total}</span>
                   </div>
                 ))}
