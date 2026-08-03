@@ -1,16 +1,29 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Camera, CameraOff, Volume2, VolumeX, RefreshCw, Zap, ScanBarcode, ArrowRight } from 'lucide-react';
+import { Camera, CameraOff, Volume2, VolumeX, RefreshCw, Zap, ScanBarcode, ArrowRight, Tag, Search } from 'lucide-react';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
+import { Product } from '../types';
+
+interface SuggestionItem {
+  id: string;
+  barcode: string;
+  title: string;
+  sku: string;
+  price: number;
+  image?: string;
+  variantInfo?: string;
+}
 
 interface BarcodeScannerProps {
   onScan: (barcode: string) => void;
   isActive: boolean;
+  products?: Product[];
 }
 
-export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScan, isActive }) => {
+export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScan, isActive, products = [] }) => {
   const [manualInput, setManualInput] = useState('');
+  const [showSuggestions, setShowSuggestions] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [cameras, setCameras] = useState<{ id: string; label: string }[]>([]);
@@ -23,6 +36,60 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScan, isActive
   const isComponentMounted = useRef(true);
   const scannerContainerId = 'interactive-barcode-reader';
   const lastScanTimestamp = useRef<number>(0);
+
+  // Extract all searchable barcode items from products list
+  const suggestionPool: SuggestionItem[] = [];
+  products.forEach((p) => {
+    if (p.sku || p.id) {
+      suggestionPool.push({
+        id: `p-${p.id}`,
+        barcode: p.sku || p.id,
+        title: p.title,
+        sku: p.sku || p.id,
+        price: p.price,
+        image: (p.media && p.media.length > 0) ? p.media[0] : undefined
+      });
+    }
+    if (p.variations && p.variations.length > 0) {
+      p.variations.forEach((v) => {
+        if (v.sku || v.barcode) {
+          suggestionPool.push({
+            id: `v-${v.id}`,
+            barcode: v.sku || v.barcode || p.sku,
+            title: p.title,
+            sku: v.sku || v.barcode || p.sku,
+            price: p.price,
+            image: (p.media && p.media.length > 0) ? p.media[0] : undefined,
+            variantInfo: `Color: ${v.color}`
+          });
+        }
+        if (v.sizes && v.sizes.length > 0) {
+          v.sizes.forEach((s, sIdx) => {
+            if (s.sku || s.barcode) {
+              suggestionPool.push({
+                id: `vs-${v.id}-${sIdx}`,
+                barcode: s.sku || s.barcode || v.sku || p.sku,
+                title: p.title,
+                sku: s.sku || s.barcode || v.sku || p.sku,
+                price: s.price || p.price,
+                image: (p.media && p.media.length > 0) ? p.media[0] : undefined,
+                variantInfo: `${v.color} / ${s.size}`
+              });
+            }
+          });
+        }
+      });
+    }
+  });
+
+  // Filter suggestions based on manualInput
+  const filteredSuggestions = manualInput.trim().length > 0 
+    ? suggestionPool.filter(item => 
+        item.barcode.toLowerCase().includes(manualInput.trim().toLowerCase()) ||
+        item.title.toLowerCase().includes(manualInput.trim().toLowerCase()) ||
+        item.sku.toLowerCase().includes(manualInput.trim().toLowerCase())
+      ).slice(0, 6)
+    : [];
 
   // Play audio beep notification on scan using Web Audio API synthesizer
   const playBeep = () => {
@@ -46,13 +113,12 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScan, isActive
     }
   };
 
-  // Hardware Scanner Global Keyboard Listener (Scanners mimic rapid keyboard inputs)
+  // Hardware Scanner Global Keyboard Listener
   useEffect(() => {
     let keyBuffer = '';
     let lastKeyTime = Date.now();
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ignore if user is typing inside an explicit input element
       const activeEl = document.activeElement;
       if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
         return;
@@ -81,14 +147,12 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScan, isActive
 
   const handleScannedBarcode = (code: string) => {
     const now = Date.now();
-    // Cooldown check (500ms debounce for same code)
     if (code === lastScannedCode && now - lastScanTimestamp.current < 800) {
       return;
     }
     lastScanTimestamp.current = now;
     setLastScannedCode(code);
 
-    // Visual trigger & Sound
     playBeep();
     setScanFlash(true);
     setTimeout(() => setScanFlash(false), 400);
@@ -102,7 +166,6 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScan, isActive
       .then((devices) => {
         if (devices && devices.length > 0) {
           setCameras(devices.map(d => ({ id: d.id, label: d.label || `Camera ${d.id}` })));
-          // Prefer environment (back) camera
           const backCam = devices.find(d => d.label.toLowerCase().includes('back') || d.label.toLowerCase().includes('environment'));
           setSelectedCameraId(backCam ? backCam.id : devices[0].id);
         }
@@ -112,13 +175,34 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScan, isActive
       });
   }, []);
 
-  // Start Camera Scanning
+  // Start Camera Scanning (explicitly requests browser camera permissions on click)
   const startScanner = async (cameraIdToUse?: string) => {
     setCameraError(null);
     try {
-      // Stop current instance if active
-      if (html5QrcodeRef.current && html5QrcodeRef.current.isScanning) {
-        await html5QrcodeRef.current.stop();
+      // 1. Explicitly request camera media stream to trigger browser permission prompt dialog
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        try {
+          const tempStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+          tempStream.getTracks().forEach(track => track.stop());
+        } catch (permErr: any) {
+          console.warn('getUserMedia permission result:', permErr);
+        }
+      }
+
+      // 2. Fetch available camera devices list
+      const devices = await Html5Qrcode.getCameras();
+      if (devices && devices.length > 0) {
+        setCameras(devices.map(d => ({ id: d.id, label: d.label || `Camera ${d.id}` })));
+      }
+
+      // 3. Stop existing scanner instance if active
+      if (html5QrcodeRef.current) {
+        try {
+          if (html5QrcodeRef.current.isScanning) {
+            await html5QrcodeRef.current.stop().catch(() => {});
+          }
+          html5QrcodeRef.current.clear();
+        } catch (e) {}
       }
 
       const html5Qrcode = new Html5Qrcode(scannerContainerId, {
@@ -135,30 +219,42 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScan, isActive
       });
       html5QrcodeRef.current = html5Qrcode;
 
-      const targetCamera = cameraIdToUse || selectedCameraId || { facingMode: 'environment' };
+      const targetCamera = cameraIdToUse || selectedCameraId || (devices && devices.length > 0 ? devices[0].id : { facingMode: 'environment' });
 
       await html5Qrcode.start(
         targetCamera,
         {
-          fps: 20, // High speed frame sampling
+          fps: 20,
           qrbox: { width: 280, height: 160 },
           aspectRatio: 1.777778
         },
         (decodedText) => {
           handleScannedBarcode(decodedText);
         },
-        () => {
-          // ignore scan frame misses
+        () => {}
+      ).catch((startErr) => {
+        // Ignore video play interruption error on quick tab switch or unmount
+        if (String(startErr).includes('interrupted') || String(startErr).includes('removed')) {
+          return;
         }
-      );
+        throw startErr;
+      });
 
       if (isComponentMounted.current) {
         setIsScanning(true);
       }
     } catch (err: any) {
-      console.error('Camera Scanner start error:', err);
+      const errMsg = err?.message || String(err);
       if (isComponentMounted.current) {
-        setCameraError(err?.message || 'Camera access denied or device not found.');
+        if (errMsg.includes('interrupted') || errMsg.includes('removed')) {
+          setIsScanning(false);
+          return;
+        }
+        if (errMsg.includes('NotAllowedError') || errMsg.includes('Permission denied')) {
+          setCameraError('Camera access is blocked by your browser. Please click the camera/lock icon in your browser address bar to allow camera access, then click "Start Camera" again.');
+        } else {
+          setCameraError(errMsg || 'Unable to access camera device.');
+        }
         setIsScanning(false);
       }
     }
@@ -166,13 +262,13 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScan, isActive
 
   // Stop Camera Scanner
   const stopScanner = async () => {
-    if (html5QrcodeRef.current && html5QrcodeRef.current.isScanning) {
+    if (html5QrcodeRef.current) {
       try {
-        await html5QrcodeRef.current.stop();
+        if (html5QrcodeRef.current.isScanning) {
+          await html5QrcodeRef.current.stop().catch(() => {});
+        }
         html5QrcodeRef.current.clear();
-      } catch (e) {
-        console.warn('Stop scanner error:', e);
-      }
+      } catch (e) {}
     }
     if (isComponentMounted.current) {
       setIsScanning(false);
@@ -199,7 +295,14 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScan, isActive
     if (manualInput.trim()) {
       handleScannedBarcode(manualInput.trim());
       setManualInput('');
+      setShowSuggestions(false);
     }
+  };
+
+  const handleSelectSuggestion = (barcode: string) => {
+    handleScannedBarcode(barcode);
+    setManualInput('');
+    setShowSuggestions(false);
   };
 
   return (
@@ -282,13 +385,11 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScan, isActive
         {isScanning && (
           <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center z-10">
             <div className="w-[280px] h-[160px] border-2 border-emerald-400/90 rounded-lg relative shadow-[0_0_20px_rgba(52,211,153,0.3)]">
-              {/* Corner accents */}
               <div className="absolute -top-1 -left-1 w-4 h-4 border-t-4 border-l-4 border-emerald-400" />
               <div className="absolute -top-1 -right-1 w-4 h-4 border-t-4 border-r-4 border-emerald-400" />
               <div className="absolute -bottom-1 -left-1 w-4 h-4 border-b-4 border-l-4 border-emerald-400" />
               <div className="absolute -bottom-1 -right-1 w-4 h-4 border-b-4 border-r-4 border-emerald-400" />
 
-              {/* Laser Scan Line animation */}
               <div className="w-full h-0.5 bg-gradient-to-r from-transparent via-emerald-400 to-transparent shadow-[0_0_8px_#34d199] absolute top-1/2 -translate-y-1/2 animate-pulse" />
             </div>
 
@@ -303,14 +404,15 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScan, isActive
         {!isScanning && (
           <div className="p-6 text-center text-gray-400 space-y-3 z-20">
             {cameraError ? (
-              <div className="max-w-sm mx-auto space-y-2">
-                <p className="text-red-400 text-xs font-semibold">{cameraError}</p>
+              <div className="max-w-sm mx-auto space-y-2 bg-gray-900/90 p-4 rounded-xl border border-gray-800 backdrop-blur-xs">
+                <CameraOff className="w-8 h-8 mx-auto text-amber-400" />
+                <p className="text-gray-200 text-xs font-medium leading-relaxed">{cameraError}</p>
                 <button
                   onClick={() => startScanner()}
-                  className="px-3 py-1.5 bg-gray-800 text-white text-xs font-semibold rounded-lg hover:bg-gray-700 transition inline-flex items-center space-x-1 cursor-pointer"
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition inline-flex items-center space-x-1.5 shadow-md cursor-pointer mt-1"
                 >
-                  <RefreshCw className="w-3.5 h-3.5" />
-                  <span>Retry Camera Access</span>
+                  <Camera className="w-4 h-4" />
+                  <span>Activate Camera Scanner</span>
                 </button>
               </div>
             ) : (
@@ -330,8 +432,8 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScan, isActive
         )}
       </div>
 
-      {/* Manual / Hardware Barcode Input Bar */}
-      <form onSubmit={handleManualSubmit} className="pt-1">
+      {/* Manual Barcode Input with Real-time Suggestions Dropdown */}
+      <form onSubmit={handleManualSubmit} className="pt-1 relative">
         <label className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1.5">
           Scan with Hardware Gun or Type Barcode / SKU
         </label>
@@ -340,14 +442,21 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScan, isActive
             <input
               type="text"
               value={manualInput}
-              onChange={(e) => setManualInput(e.target.value)}
-              placeholder="e.g. RSF-100293 or 890123456789..."
+              onFocus={() => setShowSuggestions(true)}
+              onChange={(e) => {
+                setManualInput(e.target.value);
+                setShowSuggestions(true);
+              }}
+              placeholder="e.g. Type SKU or Barcode ID (RSF-100293)..."
               className="w-full bg-gray-50 border border-gray-300 rounded-lg pl-3 pr-8 py-2 text-xs font-mono text-gray-900 font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition"
             />
             {manualInput && (
               <button
                 type="button"
-                onClick={() => setManualInput('')}
+                onClick={() => {
+                  setManualInput('');
+                  setShowSuggestions(false);
+                }}
                 className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs font-bold"
               >
                 ×
@@ -363,6 +472,52 @@ export const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScan, isActive
             <ArrowRight className="w-3.5 h-3.5" />
           </button>
         </div>
+
+        {/* Real-time Barcode ID Suggestions Dropdown */}
+        {showSuggestions && filteredSuggestions.length > 0 && (
+          <div className="absolute left-0 right-0 top-full mt-1 z-40 bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden animate-in fade-in duration-150">
+            <div className="px-3 py-1.5 bg-gray-50 border-b border-gray-100 text-[10px] font-bold text-gray-500 uppercase tracking-wider flex justify-between items-center">
+              <span>Barcode ID Suggestions ({filteredSuggestions.length})</span>
+              <button 
+                type="button" 
+                onClick={() => setShowSuggestions(false)}
+                className="hover:text-gray-700 text-[11px]"
+              >
+                Close
+              </button>
+            </div>
+            <div className="max-h-56 overflow-y-auto divide-y divide-gray-100">
+              {filteredSuggestions.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => handleSelectSuggestion(item.barcode)}
+                  className="w-full p-2.5 flex items-center justify-between text-left hover:bg-emerald-50/60 transition cursor-pointer group"
+                >
+                  <div className="flex items-center space-x-2.5 min-w-0">
+                    {item.image ? (
+                      <img src={item.image} alt={item.title} className="w-8 h-8 rounded object-cover border border-gray-200 shrink-0" />
+                    ) : (
+                      <div className="w-8 h-8 rounded bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-xs shrink-0">
+                        <Tag className="w-4 h-4" />
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <div className="font-bold text-xs text-gray-900 group-hover:text-emerald-700 transition truncate">
+                        {item.title}
+                      </div>
+                      <div className="text-[11px] font-mono text-gray-500 flex items-center space-x-1.5">
+                        <span className="bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded font-bold">{item.barcode}</span>
+                        {item.variantInfo && <span>• {item.variantInfo}</span>}
+                      </div>
+                    </div>
+                  </div>
+                  <span className="font-extrabold text-xs text-gray-900 shrink-0 ml-2">₹{item.price}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </form>
 
       {/* Last Scanned Code Feedback Banner */}

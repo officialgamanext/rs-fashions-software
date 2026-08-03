@@ -13,6 +13,33 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Global Font Weight Cap: Max font weight 500 across the entire application */
+*, *::before, *::after, h1, h2, h3, h4, h5, h6, b, strong, th {
+  font-weight: 500;
+}
+
+.font-semibold,
+.font-bold,
+.font-extrabold,
+.font-black,
+b,
+strong,
+h1, h2, h3, h4, h5, h6, th,
+button,
+input,
+select,
+textarea {
+  font-weight: 500 !important;
+}
+
+.font-normal {
+  font-weight: 400 !important;
+}
+
+.font-light {
+  font-weight: 300 !important;
+}
+
 /* Ensure cursor: pointer for all interactive elements across the application */
 button,
 select,

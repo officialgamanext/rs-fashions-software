@@ -435,6 +435,7 @@ export const OfflineBillingView: React.FC = () => {
               <BarcodeScanner 
                 onScan={handleBarcodeScan}
                 isActive={activeTab === 'barcode'}
+                products={products}
               />
 
               {/* Quick Barcode Hints */}
