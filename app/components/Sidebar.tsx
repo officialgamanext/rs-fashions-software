@@ -10,7 +10,8 @@ import {
   Users, 
   Truck,
   Percent, 
-  BarChart3, 
+  ScanBarcode, 
+  Receipt,
   ChevronDown, 
   ChevronRight
 } from 'lucide-react';
@@ -38,7 +39,8 @@ export const Sidebar: React.FC = () => {
     { href: '/customers', label: 'Customers', icon: Users },
     { href: '/shipping-and-delivery', label: 'Shipping & Delivery', icon: Truck },
     { href: '/discounts', label: 'Discounts', icon: Percent },
-    { href: '/analytics', label: 'Analytics', icon: BarChart3 }
+    { href: '/offline-billing', label: 'Offline Billing', icon: ScanBarcode },
+    { href: '/offline-sales', label: 'Offline Sales', icon: Receipt }
   ];
 
   return (

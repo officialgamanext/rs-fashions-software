@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Search, Tag, ShoppingCart, Users, Truck, BarChart3, ArrowRight, X } from 'lucide-react';
+import { Search, Tag, ShoppingCart, Users, Truck, ScanBarcode, Receipt, ArrowRight, X } from 'lucide-react';
 import { ViewType, Product } from '../types';
 
 interface QuickSearchModalProps {
@@ -50,7 +50,8 @@ export const QuickSearchModal: React.FC<QuickSearchModalProps> = ({
     { label: 'Orders', view: 'orders' as ViewType, icon: ShoppingCart },
     { label: 'Customers', view: 'customers' as ViewType, icon: Users },
     { label: 'Shipping & Delivery', view: 'shipping' as ViewType, icon: Truck },
-    { label: 'Analytics', view: 'analytics' as ViewType, icon: BarChart3 },
+    { label: 'Offline Billing', view: 'offline-billing' as ViewType, icon: ScanBarcode },
+    { label: 'Offline Sales', view: 'offline-sales' as ViewType, icon: Receipt },
   ];
 
   return (

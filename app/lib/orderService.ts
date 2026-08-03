@@ -68,16 +68,20 @@ export function subscribeToOrders(
   }
 }
 
+function removeUndefinedFields(obj: any): any {
+  return JSON.parse(JSON.stringify(obj));
+}
+
 export async function saveOrderToFirestore(orderData: Partial<Order>): Promise<string> {
   const cleanNumericOrderId = String(orderData.orderNumber || '').replace(/\D/g, '') || `${100000 + Math.floor(Math.random() * 900000)}`;
 
   if (orderData.id) {
     const ref = doc(db, ORDERS_COLLECTION, orderData.id);
-    const updatePayload: any = {
+    const updatePayload: any = removeUndefinedFields({
       ...orderData,
       orderNumber: cleanNumericOrderId,
       updatedAt: new Date().toISOString()
-    };
+    });
     delete updatePayload.id;
     await updateDoc(ref, updatePayload);
     return orderData.id;
@@ -101,13 +105,15 @@ export async function saveOrderToFirestore(orderData: Partial<Order>): Promise<s
       total: orderData.total || 0,
       paymentStatus: orderData.paymentStatus || 'Paid',
       fulfillmentStatus: orderData.fulfillmentStatus || 'Fulfilled',
-      shippingAddress: orderData.shippingAddress,
-      billingAddress: orderData.billingAddress,
       isBillingSameAsShipping: orderData.isBillingSameAsShipping ?? true,
       notes: orderData.notes || '',
       createdAt: new Date().toISOString()
     };
-    await setDoc(newDocRef, newOrder);
+    if (orderData.shippingAddress) newOrder.shippingAddress = orderData.shippingAddress;
+    if (orderData.billingAddress) newOrder.billingAddress = orderData.billingAddress;
+
+    const cleanPayload = removeUndefinedFields(newOrder);
+    await setDoc(newDocRef, cleanPayload);
     return newDocRef.id;
   }
 }

@@ -8,7 +8,40 @@ export type ViewType =
   | 'customers' 
   | 'shipping'
   | 'discounts' 
+  | 'offline-billing'
+  | 'offline-sales'
   | 'analytics';
+
+export interface SavedBillItem {
+  id: string;
+  productId: string;
+  productTitle: string;
+  sku: string;
+  color?: string;
+  size?: string;
+  productImage?: string;
+  price: number;
+  quantity: number;
+  total: number;
+}
+
+export interface SavedBill {
+  id: string;
+  billNumber: string;
+  date: string;
+  customerName: string;
+  customerPhone?: string;
+  customerEmail?: string;
+  items: SavedBillItem[];
+  itemsCount: number;
+  subtotal: number;
+  discount: number;
+  tax: number;
+  total: number;
+  notes?: string;
+  savedAt: string;
+  updatedAt?: string;
+}
 
 export type ProductStatus = 'Active' | 'Draft' | 'Archived';
 

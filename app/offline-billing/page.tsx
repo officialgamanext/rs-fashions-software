@@ -3,6 +3,6 @@
 import React from 'react';
 import { OfflineBillingView } from '../components/OfflineBillingView';
 
-export default function AnalyticsPage() {
+export default function OfflineBillingPage() {
   return <OfflineBillingView />;
 }
