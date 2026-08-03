@@ -8,7 +8,8 @@ import {
   query, 
   orderBy, 
   serverTimestamp,
-  writeBatch
+  writeBatch,
+  getDocs
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { Product, ProductStatus } from '../types';
@@ -168,3 +169,47 @@ export async function updateProductsStatusInFirestore(ids: string[], status: Pro
   });
   await batch.commit();
 }
+
+export async function getProductsFromFirestore(): Promise<Product[]> {
+  try {
+    const q = query(collection(db, PRODUCTS_COLLECTION));
+    const snapshot = await getDocs(q);
+    const products: Product[] = [];
+    snapshot.forEach((docSnap) => {
+      const data = docSnap.data();
+      products.push({
+        id: docSnap.id,
+        title: data.title || '',
+        shortDescription: data.shortDescription || '',
+        longDescription: data.longDescription || '',
+        collection: data.collection || 'General',
+        media: data.media || [],
+        price: Number(data.price) || 0,
+        compareAtPrice: data.compareAtPrice ? Number(data.compareAtPrice) : undefined,
+        sku: data.sku || '',
+        inventory: Number(data.inventory) || 0,
+        variations: data.variations || [],
+        isActive: typeof data.isActive === 'boolean' ? data.isActive : data.status === 'Active',
+        showInOnline: typeof data.showInOnline === 'boolean' ? data.showInOnline : true,
+        showInOffline: typeof data.showInOffline === 'boolean' ? data.showInOffline : true,
+        gstPercentage: Number(data.gstPercentage) || 0,
+        discountRupees: Number(data.discountRupees) || 0,
+        vendor: data.vendor || 'RS Fashions',
+        status: data.status || 'Active',
+        category: data.category || data.collection || 'Apparel',
+        productType: data.productType || 'Fashion Wear',
+        channels: data.channels ?? 2,
+        catalogs: data.catalogs ?? 1,
+        imageBgColor: data.imageBgColor || 'bg-amber-500',
+        iconName: data.iconName || 'package',
+        tags: data.tags || [],
+        createdAt: data.createdAt ? (typeof data.createdAt === 'string' ? data.createdAt : new Date(data.createdAt.seconds * 1000).toISOString().split('T')[0]) : new Date().toISOString().split('T')[0]
+      });
+    });
+    return products;
+  } catch (err) {
+    console.error('Error fetching products from Firestore:', err);
+    return [];
+  }
+}
+

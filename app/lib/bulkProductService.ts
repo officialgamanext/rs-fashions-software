@@ -1,16 +1,30 @@
 /**
  * bulkProductService.ts
- * Handles: sample Excel generation, Excel parsing, barcode generation,
- * ImageKit uploads, and batch Firebase saves for bulk product import.
+ * Handles: sample Excel generation (600 Men's Wear products), Excel parsing,
+ * RSF-numeric unique barcode generation, ImageKit uploads, auto collection creation,
+ * and batch Firebase saves for bulk product import.
  */
 
 import * as XLSX from 'xlsx';
-import { Product, ProductVariation, VariationSizeItem } from '../types';
-import { generateBarcodeDataUrl } from './barcodeService';
+import { Product, ProductVariation, VariationSizeItem, Collection } from '../types';
+import {
+  generateBarcodeDataUrl,
+  generateRSFNumericBarcode,
+  extractUsedBarcodes
+} from './barcodeService';
 import { uploadImageToImageKit } from './imagekitService';
-import { saveProductToFirestore } from './productService';
+import { saveProductToFirestore, getProductsFromFirestore } from './productService';
+import { getCollectionsFromFirestore } from './collectionService';
+import {
+  doc,
+  setDoc,
+  updateDoc,
+  collection as firestoreCollection,
+  arrayUnion
+} from 'firebase/firestore';
+import { db } from './firebase';
 
-// ─── Default fallback image (public domain white placeholder via picsum) ───────
+// ─── Default fallback image ───────────────────────────────────────────────────
 const DEFAULT_PRODUCT_IMAGE =
   'https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=600&auto=format&fit=crop&q=80';
 
@@ -33,10 +47,10 @@ function generateSizeSku(variantSku: string, size: string): string {
 }
 function generateSizeId(): string { return `SZE-${randHex(8)}`; }
 
-// ─── Excel Column Spec (what the template contains) ──────────────────────────
+// ─── Excel Column Spec ────────────────────────────────────────────────────────
 
 export interface BulkProductRow {
-  // Product-level (repeated for each variant-size row)
+  // Product-level
   title: string;
   shortDescription?: string;
   longDescription?: string;
@@ -58,56 +72,118 @@ export interface BulkProductRow {
   sizeInventory?: number;
 }
 
-// ─── Sample Data (90 rows) ───────────────────────────────────────────────────
+// ─── Sample Data (600 Men's Wear Products Generator) ─────────────────────────
 
-const SAMPLE_PRODUCTS = [
-  { title: 'Royal Silk Kanjivaram Saree', collection: 'Sarees', vendor: 'Kanjivaram Guild', price: 8999, compare: 11999 },
-  { title: 'Banarasi Zari Lehenga', collection: 'Lehengas', vendor: 'Royal Weaves', price: 15999, compare: 19999 },
-  { title: 'Cotton Printed Kurta', collection: 'Kurtis & Tunics', vendor: 'RS Fashions In-House', price: 1299, compare: 1799 },
-  { title: 'Chiffon Party Saree', collection: 'Sarees', vendor: 'Silk Paradise', price: 3499, compare: 4999 },
-  { title: 'Embroidered Salwar Suit', collection: 'Salwar Suits', vendor: 'CraftVeda', price: 4999, compare: 6499 },
-  { title: 'Designer Indo-Western Gown', collection: 'Indo-Western', vendor: 'Apex Textiles', price: 12999, compare: 16999 },
-  { title: 'Bridal Silk Lehenga Set', collection: 'Bridal Wear', vendor: 'Royal Weaves', price: 34999, compare: 44999 },
-  { title: 'Festive Anarkali Suit', collection: 'Festive Collection', vendor: 'Heritage Fabrics', price: 7499, compare: 9999 },
-  { title: 'Georgette Floral Saree', collection: 'Sarees', vendor: 'Silk Paradise', price: 2799, compare: 3599 },
-  { title: 'Denim Casual Jeans', collection: 'Western Wear', vendor: 'RS Fashions In-House', price: 1899, compare: 2499 },
+const MEN_CATEGORIES = [
+  {
+    name: 'Formal Shirts',
+    vendor: 'Executive Tailors',
+    basePrice: 1999,
+    styles: ['Classic Egyptian Cotton', 'Italian Satin', 'Executive Oxford', 'French Cuff', 'Pinpoint Twill', 'Micro Print']
+  },
+  {
+    name: 'Casual Shirts',
+    vendor: 'Linen & Co',
+    basePrice: 1499,
+    styles: ['Pure Linen Summer', 'Washed Indigo Denim', 'Plaid Flannel', 'Cuban Collar Beach', 'Corduroy Oversized', 'Chambray Vintage']
+  },
+  {
+    name: 'T-Shirts & Polos',
+    vendor: 'Pima Cotton Studio',
+    basePrice: 999,
+    styles: ['Pima Cotton Crew Neck', 'Mercerized Polo', 'Streetwear Oversized', 'Pique Striped Polo', 'Thermal Long Sleeve', 'Heavyweight Graphic']
+  },
+  {
+    name: 'Trousers & Chinos',
+    vendor: 'FlexFit Tailors',
+    basePrice: 1799,
+    styles: ['Stretch Cotton Chino', 'Slim Fit Formal', 'Pleated Dress', 'Linen Relaxed Fit', 'Tactical Cargo', 'Tech Stretch Jogger']
+  },
+  {
+    name: 'Jeans & Denim',
+    vendor: 'Indigo Denim Co',
+    basePrice: 2199,
+    styles: ['Raw Selvedge Slim', 'Dark Indigo Tapered', 'Vintage Wash Straight', 'Black Stretch Denim', 'Distressed Urban', 'Skinny Fit Indigo']
+  },
+  {
+    name: 'Suits & Blazers',
+    vendor: 'Royal Men Studio',
+    basePrice: 7999,
+    styles: ['Italian Wool Tuxedo', 'Double Breasted Navy', 'Royal Bandhgala', 'Velvet Evening Tuxedo', 'Linen Summer Blazer', '3-Piece Formal']
+  },
+  {
+    name: 'Kurtas & Ethnic Wear',
+    vendor: 'Heritage Men Wear',
+    basePrice: 2499,
+    styles: ['Silk Blend Festival', 'Chikankari Embroidered', 'Short Cotton Casual', 'Pathani Suit Set', 'Jacquard Nehru Jacket', 'Royal Silk Kurta Pajama']
+  },
+  {
+    name: 'Sherwanis & Indo-Western',
+    vendor: 'Royal Groom Studio',
+    basePrice: 15999,
+    styles: ['Royal Bridal Silk', 'Velvet Embroidered Indo-Western', 'Asymmetric Groom', 'Achkan Style Kurta Set', 'Zari Work Indo-Western', 'Imperial Zardosi']
+  },
+  {
+    name: 'Jackets & Outerwear',
+    vendor: 'Urban Leather Craft',
+    basePrice: 3499,
+    styles: ['Premium Leather Biker', 'Puffer Winter', 'Classic Bomber', 'Denim Trucker', 'Wool Blend Overcoat', 'Utility Trench']
+  },
+  {
+    name: 'Sweaters & Hoodies',
+    vendor: 'Knitwear Studio',
+    basePrice: 1899,
+    styles: ['Cashmere V-Neck Sweater', 'Fleece Pullover Hoodie', 'Chunky Knit Cardigan', 'Full-Zip Heavyweight', 'Merino Wool Crewneck', 'Ribbed Knit Pullover']
+  }
 ];
 
-const COLORS = [
-  { name: 'Crimson Red', hex: '#dc2626' },
-  { name: 'Royal Blue', hex: '#2563eb' },
-  { name: 'Emerald Green', hex: '#059669' },
+const VARIANT_COLORS = [
+  { name: 'Midnight Black', hex: '#111827' },
+  { name: 'Navy Blue', hex: '#1e3a8a' },
 ];
 
-const SIZES = ['S', 'M', 'L'];
+const VARIANT_SIZES = ['M', 'L'];
 
 export function generateSampleRows(): BulkProductRow[] {
   const rows: BulkProductRow[] = [];
-  SAMPLE_PRODUCTS.forEach((prod, pi) => {
-    COLORS.forEach((col) => {
-      SIZES.forEach((sz) => {
-        rows.push({
-          title: prod.title,
-          shortDescription: `Premium quality ${prod.title.toLowerCase()} – perfect for festive occasions`,
-          longDescription: `This exquisite ${prod.title.toLowerCase()} is crafted with the finest fabrics, offering a blend of tradition and modern style. Ideal for weddings, festivals, and special occasions. Available in multiple sizes for the perfect fit.`,
-          collection: prod.collection,
-          vendor: prod.vendor,
-          price: prod.price,
-          compareAtPrice: prod.compare,
-          discountRupees: Math.round((prod.compare - prod.price) * 0.5),
-          gstPercentage: 5,
-          productStatus: 'Active',
-          showInOnline: true,
-          showInOffline: true,
-          color: col.name,
-          colorHex: col.hex,
-          size: sz,
-          sizePrice: prod.price,
-          sizeInventory: Math.floor(Math.random() * 15) + 5,
+  let productCount = 0;
+
+  // Generate exactly 600 Men's Wear products (60 products per category across 10 categories)
+  for (const cat of MEN_CATEGORIES) {
+    for (let i = 1; i <= 60; i++) {
+      productCount++;
+      const styleName = cat.styles[(i - 1) % cat.styles.length];
+      const title = `Men's ${styleName} ${cat.name} #${i}`;
+      const price = cat.basePrice + (i * 20);
+      const compareAtPrice = Math.round(price * 1.25);
+      const discountRupees = compareAtPrice - price;
+
+      VARIANT_COLORS.forEach((col) => {
+        VARIANT_SIZES.forEach((sz) => {
+          rows.push({
+            title,
+            shortDescription: `Premium Men's Wear - ${title} crafted for style and comfort`,
+            longDescription: `Elevate your wardrobe with the ${title}. Tailored from premium fabrics, designed specifically for modern men's fashion. Perfect for business, casual, or festive occasions.`,
+            collection: cat.name,
+            vendor: cat.vendor,
+            price,
+            compareAtPrice,
+            discountRupees,
+            gstPercentage: 5,
+            productStatus: 'Active',
+            showInOnline: true,
+            showInOffline: true,
+            color: col.name,
+            colorHex: col.hex,
+            size: sz,
+            sizePrice: price,
+            sizeInventory: Math.floor(Math.random() * 20) + 5,
+          });
         });
       });
-    });
-  });
+    }
+  }
+
   return rows;
 }
 
@@ -139,9 +215,8 @@ export function downloadSampleExcel(): void {
 
   const ws = XLSX.utils.aoa_to_sheet(sheetData);
 
-  // Column widths
   ws['!cols'] = [
-    { wch: 35 }, { wch: 50 }, { wch: 70 }, { wch: 20 }, { wch: 25 },
+    { wch: 40 }, { wch: 50 }, { wch: 70 }, { wch: 25 }, { wch: 25 },
     { wch: 10 }, { wch: 14 }, { wch: 16 }, { wch: 14 },
     { wch: 14 }, { wch: 13 }, { wch: 14 },
     { wch: 16 }, { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 14 }
@@ -152,25 +227,25 @@ export function downloadSampleExcel(): void {
 
   // Instructions sheet
   const instrData = [
-    ['RS Fashions - Bulk Product Import Template'],
+    ['RS Fashions - Men\'s Wear Bulk Product Import Template'],
     [''],
     ['INSTRUCTIONS:'],
-    ['1. Each row = one Color+Size combination. Repeat product fields for each color/size row.'],
-    ['2. Products are grouped by "title". Same title = same product (multiple variants).'],
-    ['3. Images are optional. A default image will be used if not provided.'],
-    ['4. Barcodes are auto-generated during import — do NOT add them manually.'],
-    ['5. IDs (productId, SKU, variantId, sizeId) are all auto-generated — leave blank.'],
-    ['6. showInOnline / showInOffline: use TRUE or FALSE'],
-    ['7. productStatus: Active or Draft'],
-    ['8. gstPercentage: 0, 5, 12, 18, or 28'],
-    ['9. colorHex: optional hex code like #dc2626'],
+    ['1. This template contains 600 Men\'s Wear base products with color and size variations.'],
+    ['2. Each row = one Color+Size combination. Repeat product fields for each color/size row.'],
+    ['3. Products are grouped by "title". Same title = same product (multiple variants).'],
+    ['4. If a collection in the Excel does not exist, it will be automatically created and assigned.'],
+    ['5. Barcodes are auto-generated as unique RSF-numeric codes (e.g. RSF-100001).'],
+    ['6. IDs (productId, SKU, variantId, sizeId) are auto-generated.'],
+    ['7. showInOnline / showInOffline: use TRUE or FALSE.'],
+    ['8. productStatus: Active or Draft.'],
+    ['9. gstPercentage: 0, 5, 12, 18, or 28.'],
     [''],
     ['COLUMNS:'],
     ['title', 'Product name — required'],
     ['shortDescription', 'Short tagline for product card'],
     ['longDescription', 'Full product description'],
-    ['collection', 'e.g. Sarees, Lehengas, Kurtis & Tunics'],
-    ['vendor', 'e.g. RS Fashions In-House'],
+    ['collection', 'e.g. Formal Shirts, Casual Shirts, Suits & Blazers, Sherwanis'],
+    ['vendor', 'Brand or vendor name'],
     ['price', 'Base price in ₹ — required'],
     ['compareAtPrice', 'MRP / original price'],
     ['discountRupees', 'Discount amount in ₹'],
@@ -179,16 +254,16 @@ export function downloadSampleExcel(): void {
     ['showInOnline', 'TRUE or FALSE'],
     ['showInOffline', 'TRUE or FALSE'],
     ['color', 'Color variant name — required'],
-    ['colorHex', 'Hex color code e.g. #dc2626'],
-    ['size', 'Size — required (S/M/L/XL/XXL/XS/Free Size)'],
+    ['colorHex', 'Hex color code e.g. #111827'],
+    ['size', 'Size — required (S/M/L/XL/XXL)'],
     ['sizePrice', 'Price override for this specific size'],
     ['sizeInventory', 'Stock count for this size'],
   ];
   const wsInstr = XLSX.utils.aoa_to_sheet(instrData);
-  wsInstr['!cols'] = [{ wch: 30 }, { wch: 60 }];
+  wsInstr['!cols'] = [{ wch: 30 }, { wch: 65 }];
   XLSX.utils.book_append_sheet(wb, wsInstr, 'Instructions');
 
-  XLSX.writeFile(wb, 'RS-Fashions-Bulk-Upload-Template.xlsx');
+  XLSX.writeFile(wb, 'RS-Fashions-MensWear-Bulk-Upload-Template.xlsx');
 }
 
 // ─── Parse uploaded Excel ─────────────────────────────────────────────────────
@@ -202,8 +277,8 @@ export function parseProductExcel(buffer: ArrayBuffer): BulkProductRow[] {
     title: String(r.title || '').trim(),
     shortDescription: String(r.shortDescription || '').trim(),
     longDescription: String(r.longDescription || '').trim(),
-    collection: String(r.collection || 'Sarees').trim(),
-    vendor: String(r.vendor || 'RS Fashions In-House').trim(),
+    collection: String(r.collection || 'Formal Shirts').trim(),
+    vendor: String(r.vendor || 'RS Fashions Men').trim(),
     price: parseFloat(r.price) || 0,
     compareAtPrice: r.compareAtPrice ? parseFloat(r.compareAtPrice) : undefined,
     discountRupees: r.discountRupees ? parseFloat(r.discountRupees) : undefined,
@@ -212,8 +287,8 @@ export function parseProductExcel(buffer: ArrayBuffer): BulkProductRow[] {
     showInOnline: String(r.showInOnline).toUpperCase() !== 'FALSE',
     showInOffline: String(r.showInOffline).toUpperCase() !== 'FALSE',
     color: String(r.color || 'Default').trim(),
-    colorHex: String(r.colorHex || '#999999').trim(),
-    size: String(r.size || 'Free Size').trim(),
+    colorHex: String(r.colorHex || '#111827').trim(),
+    size: String(r.size || 'M').trim(),
     sizePrice: r.sizePrice ? parseFloat(r.sizePrice) : undefined,
     sizeInventory: r.sizeInventory ? parseInt(r.sizeInventory) : 10,
   })).filter(r => r.title && r.color && r.size);
@@ -224,7 +299,7 @@ export function parseProductExcel(buffer: ArrayBuffer): BulkProductRow[] {
 interface ParsedProduct {
   productId: string;
   sku: string;
-  row: BulkProductRow; // representative product-level row
+  row: BulkProductRow;
   variants: Map<string, { variantId: string; variantSku: string; colorHex: string; sizes: BulkProductRow[] }>;
 }
 
@@ -249,7 +324,7 @@ function groupRowsIntoProducts(rows: BulkProductRow[]): ParsedProduct[] {
       prod.variants.set(colorKey, {
         variantId: generateVariantId(),
         variantSku,
-        colorHex: row.colorHex || '#999999',
+        colorHex: row.colorHex || '#111827',
         sizes: []
       });
     }
@@ -281,7 +356,22 @@ export async function importProductsFromExcel(
   const errors: string[] = [];
   let imported = 0;
 
-  onProgress({ total: grouped.length, current: 0, currentProductTitle: '', currentStep: 'Preparing...', done: false, errors: [] });
+  onProgress({ total: grouped.length, current: 0, currentProductTitle: '', currentStep: 'Preparing collections & barcodes...', done: false, errors: [] });
+
+  // 1. Fetch existing collections to auto-create missing ones
+  const existingCollections = await getCollectionsFromFirestore();
+  const collectionMap = new Map<string, { id: string; productIds: string[] }>();
+  existingCollections.forEach((c) => {
+    collectionMap.set(c.name.toLowerCase().trim(), {
+      id: c.id,
+      productIds: Array.isArray(c.productIds) ? c.productIds : []
+    });
+  });
+
+  // 2. Fetch existing products to ensure RSF-numeric barcode uniqueness
+  const existingProducts = await getProductsFromFirestore();
+  const { usedBarcodes, maxCounter } = extractUsedBarcodes(existingProducts);
+  const barcodeCounterRef = { value: maxCounter };
 
   for (let pi = 0; pi < grouped.length; pi++) {
     const prod = grouped[pi];
@@ -291,9 +381,47 @@ export async function importProductsFromExcel(
       onProgress({
         total: grouped.length, current: pi + 1,
         currentProductTitle: row.title,
-        currentStep: 'Uploading default product image...',
+        currentStep: 'Managing collection & uploading media...',
         done: false, errors
       });
+
+      // ── AUTO-CREATE OR ASSIGN COLLECTION ──
+      const collectionName = (row.collection || 'Formal Shirts').trim();
+      const collKey = collectionName.toLowerCase();
+      
+      if (collectionMap.has(collKey)) {
+        const existingColl = collectionMap.get(collKey)!;
+        if (!existingColl.productIds.includes(productId)) {
+          existingColl.productIds.push(productId);
+          try {
+            const collRef = doc(db, 'collections', existingColl.id);
+            await updateDoc(collRef, {
+              productIds: arrayUnion(productId),
+              updatedAt: new Date().toISOString()
+            });
+          } catch (e) {
+            console.warn(`Failed to sync product ID to existing collection "${collectionName}":`, e);
+          }
+        }
+      } else {
+        // Create new collection
+        try {
+          const newCollRef = doc(firestoreCollection(db, 'collections'));
+          const newCollData: Collection = {
+            id: newCollRef.id,
+            name: collectionName,
+            description: `${collectionName} Collection for Men's Wear`,
+            image: DEFAULT_PRODUCT_IMAGE,
+            productIds: [productId],
+            status: 'Active',
+            createdAt: new Date().toISOString().split('T')[0]
+          };
+          await setDoc(newCollRef, newCollData);
+          collectionMap.set(collKey, { id: newCollRef.id, productIds: [productId] });
+        } catch (e) {
+            console.warn(`Failed to auto-create collection "${collectionName}":`, e);
+        }
+      }
 
       // Default image — upload to ImageKit
       let finalMediaUrl = DEFAULT_PRODUCT_IMAGE;
@@ -318,12 +446,12 @@ export async function importProductsFromExcel(
         onProgress({
           total: grouped.length, current: pi + 1,
           currentProductTitle: row.title,
-          currentStep: `Generating barcode for variant "${colorName}"...`,
+          currentStep: `Generating RSF-numeric barcode for variant "${colorName}"...`,
           done: false, errors
         });
 
-        // Generate + upload variant-level barcode
-        const varBarcodeCode = variantSku;
+        // Generate RSF-numeric barcode for variant
+        const varBarcodeCode = generateRSFNumericBarcode(usedBarcodes, barcodeCounterRef);
         const varBarcodeDataUrl = generateBarcodeDataUrl(varBarcodeCode);
         let varBarcodeUrl = '';
         if (varBarcodeDataUrl) {
@@ -341,7 +469,7 @@ export async function importProductsFromExcel(
         for (let si = 0; si < sizes.length; si++) {
           const sizeRow = sizes[si];
           const sizeSku = generateSizeSku(variantSku, sizeRow.size);
-          const sizeBarcodeCode = sizeSku;
+          const sizeBarcodeCode = generateRSFNumericBarcode(usedBarcodes, barcodeCounterRef);
           const sizeBarcodeDataUrl = generateBarcodeDataUrl(sizeBarcodeCode);
           let sizeBarcodeUrl = '';
           if (sizeBarcodeDataUrl) {
@@ -397,8 +525,8 @@ export async function importProductsFromExcel(
         title: row.title,
         shortDescription: row.shortDescription || '',
         longDescription: row.longDescription || '',
-        collection: row.collection || 'Sarees',
-        vendor: row.vendor || 'RS Fashions In-House',
+        collection: collectionName,
+        vendor: row.vendor || 'RS Fashions Men',
         price: row.price,
         compareAtPrice: row.compareAtPrice,
         discountRupees: row.discountRupees,
@@ -411,7 +539,7 @@ export async function importProductsFromExcel(
         showInOnline: row.showInOnline ?? true,
         showInOffline: row.showInOffline ?? true,
         status: isActive ? 'Active' : 'Draft',
-        category: row.collection || 'Ethnic Wear',
+        category: collectionName,
         productType: 'Fashion Apparel',
         channels: (row.showInOnline ? 1 : 0) + (row.showInOffline ? 1 : 0),
         catalogs: 1,

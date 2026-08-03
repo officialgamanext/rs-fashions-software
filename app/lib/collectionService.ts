@@ -6,7 +6,8 @@ import {
   updateDoc, 
   deleteDoc, 
   query, 
-  writeBatch
+  writeBatch,
+  getDocs
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { Collection } from '../types';
@@ -110,3 +111,28 @@ export async function deleteCollectionFromFirestore(id: string): Promise<void> {
   const ref = doc(db, COLLECTIONS_PATH, id);
   await deleteDoc(ref);
 }
+
+export async function getCollectionsFromFirestore(): Promise<Collection[]> {
+  try {
+    const q = query(collection(db, COLLECTIONS_PATH));
+    const snapshot = await getDocs(q);
+    const collections: Collection[] = [];
+    snapshot.forEach((docSnap) => {
+      const data = docSnap.data();
+      collections.push({
+        id: docSnap.id,
+        name: data.name || '',
+        description: data.description || '',
+        image: data.image || '',
+        productIds: Array.isArray(data.productIds) ? data.productIds : [],
+        status: data.status || 'Active',
+        createdAt: data.createdAt ? (typeof data.createdAt === 'string' ? data.createdAt : new Date(data.createdAt.seconds * 1000).toISOString().split('T')[0]) : new Date().toISOString().split('T')[0]
+      });
+    });
+    return collections;
+  } catch (err) {
+    console.error('Error fetching collections from Firestore:', err);
+    return [];
+  }
+}
+

@@ -362,6 +362,8 @@ export const OfflineBillingView: React.FC = () => {
         total: grandTotal,
         paymentStatus: 'Paid' as const,
         fulfillmentStatus: 'Fulfilled' as const,
+        channel: 'Offline' as const,
+        isOffline: true,
         notes: `Offline POS Settlement (${paymentMethod})`
       };
 

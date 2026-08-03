@@ -211,6 +211,8 @@ export interface Order {
   billingAddress?: OrderAddress;
   isBillingSameAsShipping?: boolean;
   notes?: string;
+  channel?: 'Online' | 'Offline';
+  isOffline?: boolean;
   createdAt?: string;
   updatedAt?: string;
 }

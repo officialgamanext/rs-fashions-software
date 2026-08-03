@@ -29,10 +29,12 @@ import {
 } from 'lucide-react';
 import { Product, ProductStatus, ProductVariation, VariationSizeItem } from '../../types';
 import { useApp } from '../../context/AppContext';
-import { generateBarcodeDataUrl } from '../../lib/barcodeService';
+import { generateBarcodeDataUrl, generateRSFNumericBarcode, extractUsedBarcodes } from '../../lib/barcodeService';
 import { uploadImageToImageKit } from '../../lib/imagekitService';
 
 const COLLECTIONS = [
+  'Formal Shirts', 'Casual Shirts', 'T-Shirts & Polos', 'Trousers & Chinos', 'Jeans & Denim',
+  'Suits & Blazers', 'Kurtas & Ethnic Wear', 'Sherwanis & Indo-Western', 'Jackets & Outerwear', 'Sweaters & Hoodies',
   'Sarees', 'Lehengas', 'Salwar Suits', 'Kurtis & Tunics', 'Western Wear',
   'Indo-Western', 'Bridal Wear', 'Festive Collection', 'Accessories', 'New Arrivals', 'Sale'
 ];
@@ -121,7 +123,7 @@ function BarcodePreview({ code }: { code: string }) {
 
 export default function AddProductPage() {
   const router = useRouter();
-  const { collections: userCollections = [], handleSaveProduct } = useApp();
+  const { collections: userCollections = [], products = [], handleSaveProduct } = useApp();
 
   const allCollectionOptions = Array.from(new Set([
     ...userCollections.map(c => c.name),
@@ -299,12 +301,15 @@ export default function AddProductPage() {
     // Generate & upload per-variant and per-size barcodes → ImageKit
     if (variations.length > 0) {
       setSavingStatusText('Generating & uploading barcodes to ImageKit...');
+      const { usedBarcodes, maxCounter } = extractUsedBarcodes(products);
+      const barcodeCounterRef = { value: maxCounter };
       const updatedVars: ProductVariation[] = [];
+
       for (let i = 0; i < variations.length; i++) {
         const v = variations[i];
         const varSku = v.sku || generateVariantSku(currentSku, v.color);
         const varProductId = v.productId || generateVariantProductId();
-        const varBarcodeCode = v.barcode || varSku;
+        const varBarcodeCode = (v.barcode && /^RSF-\d+$/i.test(v.barcode)) ? v.barcode : generateRSFNumericBarcode(usedBarcodes, barcodeCounterRef);
 
         const varBarcodeDataUrl = generateBarcodeDataUrl(varBarcodeCode);
         let varBarcodeUrl = v.barcodeUrl || '';
@@ -316,7 +321,7 @@ export default function AddProductPage() {
         for (const s of v.sizes) {
           const sizeSku = s.sku || generateSizeSku(varSku, s.size);
           const sizeProductId = s.productId || generateSizeProductId();
-          const sizeBarcodeCode = s.barcode || sizeSku;
+          const sizeBarcodeCode = (s.barcode && /^RSF-\d+$/i.test(s.barcode)) ? s.barcode : generateRSFNumericBarcode(usedBarcodes, barcodeCounterRef);
           const sizeBarcodeDataUrl = generateBarcodeDataUrl(sizeBarcodeCode);
           let sizeBarcodeUrl = s.barcodeUrl || '';
           if (sizeBarcodeDataUrl) {

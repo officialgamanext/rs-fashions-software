@@ -28,6 +28,9 @@ export function subscribeToOrders(
           const itemsList = Array.isArray(data.items) ? data.items : [];
           const calculatedCount = itemsList.reduce((acc: number, item: any) => acc + (item.quantity || 1), 0);
 
+          const isOfflineFlag = data.isOffline === true || (typeof data.notes === 'string' && data.notes.toLowerCase().includes('offline pos'));
+          const channelVal = data.channel || (isOfflineFlag ? 'Offline' : 'Online');
+
           orders.push({
             id: docSnap.id,
             orderNumber: String(data.orderNumber || docSnap.id).replace(/\D/g, '') || `${1000 + Math.floor(Math.random() * 9000)}`,
@@ -50,6 +53,8 @@ export function subscribeToOrders(
             billingAddress: data.billingAddress || undefined,
             isBillingSameAsShipping: data.isBillingSameAsShipping ?? true,
             notes: data.notes || '',
+            channel: channelVal,
+            isOffline: isOfflineFlag,
             createdAt: data.createdAt ? (typeof data.createdAt === 'string' ? data.createdAt : new Date(data.createdAt.seconds * 1000).toISOString()) : new Date().toISOString()
           });
         });
@@ -107,6 +112,8 @@ export async function saveOrderToFirestore(orderData: Partial<Order>): Promise<s
       fulfillmentStatus: orderData.fulfillmentStatus || 'Fulfilled',
       isBillingSameAsShipping: orderData.isBillingSameAsShipping ?? true,
       notes: orderData.notes || '',
+      channel: orderData.channel || (orderData.isOffline ? 'Offline' : 'Online'),
+      isOffline: orderData.isOffline ?? false,
       createdAt: new Date().toISOString()
     };
     if (orderData.shippingAddress) newOrder.shippingAddress = orderData.shippingAddress;

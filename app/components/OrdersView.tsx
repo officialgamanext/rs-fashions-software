@@ -39,12 +39,21 @@ export const OrdersView: React.FC<OrdersViewProps> = ({
   const [fulfillmentFilter, setFulfillmentFilter] = useState<string>('All');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
-  // Calculate metrics
-  const totalRevenue = orders.reduce((acc, o) => acc + (o.total || 0), 0);
-  const paidOrdersCount = orders.filter(o => o.paymentStatus === 'Paid').length;
-  const unfulfilledCount = orders.filter(o => o.fulfillmentStatus === 'Unfulfilled' || o.fulfillmentStatus === 'In Progress').length;
+  // Filter out offline POS sales (offline sales are displayed separately under Offline Sales tab)
+  const onlineOrders = orders.filter(o => {
+    const isOffline = 
+      o.channel === 'Offline' || 
+      o.isOffline === true || 
+      (typeof o.notes === 'string' && o.notes.toLowerCase().includes('offline pos'));
+    return !isOffline;
+  });
 
-  const filteredOrders = orders.filter((order) => {
+  // Calculate metrics for online orders
+  const totalRevenue = onlineOrders.reduce((acc, o) => acc + (o.total || 0), 0);
+  const paidOrdersCount = onlineOrders.filter(o => o.paymentStatus === 'Paid').length;
+  const unfulfilledCount = onlineOrders.filter(o => o.fulfillmentStatus === 'Unfulfilled' || o.fulfillmentStatus === 'In Progress').length;
+
+  const filteredOrders = onlineOrders.filter((order) => {
     const matchesSearch = 
       (order.orderNumber || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       (order.customerName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -85,10 +94,10 @@ export const OrdersView: React.FC<OrdersViewProps> = ({
             <h1 className="text-xl font-bold tracking-tight text-gray-900 flex items-center space-x-2">
               <span>Orders</span>
               <span className="text-xs bg-gray-100 text-gray-700 border border-gray-200 px-2 py-0.5 rounded-full font-semibold">
-                {orders.length} Total
+                {onlineOrders.length} Total
               </span>
             </h1>
-            <p className="text-xs text-gray-500">Track online and offline sales orders, billing, and fulfillment</p>
+            <p className="text-xs text-gray-500">Track online store orders, customer billing, and fulfillment</p>
           </div>
         </div>
 

@@ -167,7 +167,7 @@ export const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
                     <span className="text-xs font-bold text-amber-900">Download Sample Excel Template</span>
                   </div>
                   <p className="text-[11px] text-amber-700">
-                    Includes <strong>90 sample rows</strong> across 10 products × 3 colors × 3 sizes. Fill in your own data using this format.
+                    Includes <strong>600 Men's Wear sample products</strong> with color and size variations across 10 fashion categories.
                   </p>
                 </div>
                 <button
